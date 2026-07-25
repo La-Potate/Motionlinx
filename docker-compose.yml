@@ -1,0 +1,20 @@
+services:
+  web:
+    build: .
+    container_name: seo-toolkit-api
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:2255}
+      - PORT=3000
+      - USERDATA_PATH=/var/lib/app-data
+    ports:
+      - "2255:3000"
+    restart: unless-stopped
+    volumes:
+      - ${USERDATA_PATH:-./app-data}:/var/lib/app-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

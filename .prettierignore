@@ -1,0 +1,13 @@
+node_modules/
+client/node_modules/
+client/build/
+client/dist/
+dist/
+app-data/
+USERDATA/
+data/
+*.log
+package-lock.json
+client/package-lock.json
+.env
+.env.*

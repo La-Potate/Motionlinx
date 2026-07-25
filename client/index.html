@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#F35E1B" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="Motionlinx — one workspace for every growth toolkit" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
+    />
+    <script>
+      // Prevent FOUC: read theme preference before React mounts.
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme');
+          var mode = stored || 'system';
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved = mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
+          if (resolved === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+    <title>Motionlinx</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
