@@ -24,5 +24,18 @@
     "no-constant-condition": ["error", { "checkLoops": false }],
     "no-console": "off",
     "no-prototype-builtins": "off"
-  }
+  },
+  "overrides": [
+    // Root tooling configs are ESM (`export default`); the backend itself is CommonJS.
+    {
+      "files": ["vitest.config.js", "*.config.mjs"],
+      "parserOptions": { "sourceType": "module" }
+    },
+    // Playwright `page.evaluate()` callbacks are serialised and executed inside the
+    // browser, so they legitimately reference `document` / `window`.
+    {
+      "files": ["src/services/pageCommenter.js"],
+      "env": { "browser": true }
+    }
+  ]
 }

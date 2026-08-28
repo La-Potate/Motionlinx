@@ -10,9 +10,11 @@ dist/
 # User data and database
 USERDATA/
 app-data/
-data/
-!client/src/data/
-!client/src/data/releaseNotes.js
+# Anchored to the repo root: this is the legacy runtime data dir migrated by
+# app.js. WITHOUT the leading slash it also matched src/data/ and
+# client/src/data/, silently excluding committed source (e.g. the citation
+# publisher list) and breaking a fresh clone at boot.
+/data/
 database.sqlite
 *.sqlite
 *.sqlite-wal
@@ -23,6 +25,10 @@ database.sqlite
 .env.local
 .env.production
 .env.development
+# Dotless variants — a file created as `env` instead of `.env` still holds
+# real secrets but is NOT matched by the patterns above.
+/env
+/env.*
 
 # Logs
 logs/

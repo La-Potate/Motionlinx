@@ -38,9 +38,4 @@ export default defineConfig({
   oxc: {
     jsx: { runtime: 'automatic' },
   },
-  optimizeDeps: {
-    rolldownOptions: {
-      jsx: { mode: 'preserve' },
-    },
-  },
 });
