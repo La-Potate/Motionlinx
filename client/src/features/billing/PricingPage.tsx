@@ -131,7 +131,7 @@ export default function PricingPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate(isTrial ? '/trial' : '/seo-toolkit')}
+              onClick={() => navigate(isTrial ? '/trial' : '/dashboard')}
               className="gap-1.5 -ml-2"
             >
               <ArrowLeft className="size-4" />

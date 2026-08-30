@@ -19,8 +19,7 @@ function TitleManager() {
     if (path === '/') label = 'Motionlinx';
     else if (path === '/signin') label = 'Sign in';
     else if (path === '/signup') label = 'Sign up';
-    else if (path === '/toolkit') label = 'Toolkit';
-    else if (path === '/seo-toolkit') label = 'SEO Toolkit';
+    else if (path === '/dashboard') label = 'Dashboard';
     else if (path === '/trial') label = 'Trial';
     else if (path === '/pricing') label = 'Pricing';
     else if (path === '/admin') label = 'Admin Panel';

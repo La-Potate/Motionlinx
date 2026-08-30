@@ -15,7 +15,6 @@ import LoadingScreen from '@/shared/components/LoadingScreen';
 
 // Public marketing
 const LandingPage = lazy(() => import('@/features/landing/LandingPage'));
-const ToolkitHubPage = lazy(() => import('@/features/toolkit-hub/ToolkitHubPage'));
 
 // Auth + shared
 const LoginPage = lazy(() => import('@/features/auth/LoginPage'));
@@ -24,8 +23,9 @@ const SharedSiteMarkerPage = lazy(
   () => import('@/features/web-search/SharedSiteMarkerPage')
 );
 
-// SEO Toolkit dashboard / hubs
-const HomePage = lazy(() => import('@/features/home/HomePage'));
+// Dashboard — the single post-login surface. Replaces the old
+// /toolkit -> /seo-toolkit -> hub -> tool chain with one organised page.
+const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'));
 
 // AI Traffic Report (separate Motionlinx app, sibling to SEO Toolkit)
 const AiTrafficReportPage = lazy(
@@ -47,8 +47,6 @@ const ContentLanding = lazy(() => import('@/features/content/LandingPage'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const AdminPage = lazy(() => import('@/features/admin/AdminPage'));
 const PricingPage = lazy(() => import('@/features/billing/PricingPage'));
-
-const Whiteboard = lazy(() => import('@/features/whiteboard/Whiteboard'));
 
 // Local Business tools
 const LocalResearchPage = lazy(
@@ -95,20 +93,17 @@ const BeyondIntentPage = lazy(() => import('@/features/content/BeyondIntentPage'
    load instead of replaying on every navigation.
    ========================================================================= */
 
-function ShelledLayout({ fullBleed = false }: { fullBleed?: boolean }) {
+function ShelledLayout() {
   const location = useLocation();
   return (
-    <AppShell fullBleed={fullBleed}>
+    <AppShell>
       <Suspense fallback={<PageSkeleton />}>
         {/* mode="wait" — old page fully exits before the new one mounts, so
             no ghost copies linger below the fold. Shared layoutId still
             morphs the tool icon across routes via motion's saved-rect
             tracking inside LayoutGroup. */}
         <AnimatePresence mode="wait" initial={false}>
-          <PageTransition
-            key={location.pathname}
-            className={fullBleed ? 'flex-1 flex flex-col min-h-0' : undefined}
-          >
+          <PageTransition key={location.pathname}>
             <Outlet />
           </PageTransition>
         </AnimatePresence>
@@ -117,13 +112,7 @@ function ShelledLayout({ fullBleed = false }: { fullBleed?: boolean }) {
   );
 }
 
-function GuardedShell({
-  requireAdmin = false,
-  fullBleed = false,
-}: {
-  requireAdmin?: boolean;
-  fullBleed?: boolean;
-}) {
+function GuardedShell({ requireAdmin = false }: { requireAdmin?: boolean }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
@@ -136,9 +125,9 @@ function GuardedShell({
     );
   }
   if (!user) return <Navigate to="/signin" replace />;
-  if (requireAdmin && user.role !== 'admin') return <Navigate to="/seo-toolkit" replace />;
+  if (requireAdmin && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
   if (user.role === 'trial' && !requireAdmin) return <Navigate to="/trial" replace />;
-  return <ShelledLayout fullBleed={fullBleed} />;
+  return <ShelledLayout />;
 }
 
 function TrialGuard({ children }: { children: React.ReactNode }) {
@@ -161,9 +150,8 @@ export function AppRoutes() {
   return (
     <Suspense fallback={null}>
       <Routes>
-        {/* Public — marketing landing + toolkit hub + auth */}
+        {/* Public — marketing landing + auth + public share link */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/toolkit" element={<ToolkitHubPage />} />
         <Route path="/signin" element={<LoginPage />} />
         <Route path="/signup" element={<LoginPage initialTab="signup" />} />
         <Route
@@ -171,7 +159,7 @@ export function AppRoutes() {
           element={<SharedSiteMarkerPage />}
         />
 
-        {/* Full-bleed (no shell) */}
+        {/* Authenticated but outside the shell */}
         <Route
           path="/trial"
           element={
@@ -189,17 +177,15 @@ export function AppRoutes() {
           }
         />
 
-        {/* Whiteboard runs full-bleed so its canvas can fill the viewport
-            without the standard page padding causing overflow. */}
-        <Route element={<GuardedShell fullBleed />}>
-          <Route path="/whiteboard" element={<Whiteboard />} />
-        </Route>
-
         {/* Shelled — AppShell mounted once */}
         <Route element={<GuardedShell />}>
-          <Route path="/seo-toolkit" element={<HomePage />} />
-          {/* /home kept as a redirect so old bookmarks survive the rename. */}
-          <Route path="/home" element={<Navigate to="/seo-toolkit" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          {/* Legacy paths. /toolkit and /seo-toolkit were two separate card
+              pages that only existed to link onward; /dashboard now does
+              that job directly. Kept as redirects so old links survive. */}
+          <Route path="/seo-toolkit" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/toolkit" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/home" element={<Navigate to="/dashboard" replace />} />
           <Route path="/ai-traffic-report" element={<AiTrafficReportPage />} />
           <Route path="/AI-Assistant" element={<AiAssistantPage />} />
           <Route path="/settings" element={<SettingsPage />} />

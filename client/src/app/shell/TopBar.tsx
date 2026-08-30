@@ -51,9 +51,9 @@ export function TopBar({ onOpenCommand }: Props) {
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
-            onClick={() => navigate('/toolkit')}
+            onClick={() => navigate('/dashboard')}
             className="flex items-center rounded-md px-1 -mx-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-80"
-            aria-label="Go to home"
+            aria-label="Go to dashboard"
           >
             <Wordmark size="md" />
           </button>

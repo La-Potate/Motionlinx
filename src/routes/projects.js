@@ -8,52 +8,11 @@ const authenticate = require('../middleware/authenticate');
 const router = express.Router();
 
 // NOTE: this router is mounted at `/api` (not `/api/projects`) because its
-// routes use multiple top-level paths (`/projects`, `/groups`, `/tasks`,
-// `/whiteboard`). A blanket `router.use(authenticate)` would therefore
+// routes use multiple top-level paths (`/projects`, `/groups`, `/tasks`).
+// A blanket `router.use(authenticate)` would therefore
 // authenticate every `/api/*` request that flows past it in mount order —
 // including the public site-marker share endpoint. We attach `authenticate`
 // per route instead.
-
-// ---- Whiteboard ----
-router.get('/whiteboard', authenticate, async (req, res) => {
-  try {
-    const row = await dbGet(
-      'SELECT data FROM whiteboard_data WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
-      [req.user.id],
-    );
-    res.json({ data: row ? JSON.parse(row.data) : null });
-  } catch (err) {
-    logger.error({ err }, 'Whiteboard read failed');
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-router.post('/whiteboard', authenticate, async (req, res) => {
-  const { data } = req.body || {};
-  if (!data) return res.status(400).json({ error: 'Whiteboard data required' });
-
-  try {
-    const existing = await dbGet(
-      'SELECT id FROM whiteboard_data WHERE user_id = ?',
-      [req.user.id],
-    );
-    if (existing) {
-      await dbRun(
-        'UPDATE whiteboard_data SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
-        [JSON.stringify(data), req.user.id],
-      );
-      return res.json({ message: 'Whiteboard data updated successfully' });
-    }
-    await dbRun('INSERT INTO whiteboard_data (user_id, data) VALUES (?, ?)', [
-      req.user.id,
-      JSON.stringify(data),
-    ]);
-    res.json({ message: 'Whiteboard data saved successfully' });
-  } catch (err) {
-    logger.error({ err }, 'Whiteboard save failed');
-    res.status(500).json({ error: 'Failed to save whiteboard data' });
-  }
-});
 
 // ---- Projects CRUD ----
 router.get('/projects', authenticate, async (req, res) => {

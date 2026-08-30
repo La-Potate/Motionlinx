@@ -195,7 +195,7 @@ async function buildApp() {
   app.use('/api/admin', require('./routes/admin'));
   app.use('/api/content', require('./routes/content'));
 
-  // Projects / groups / tasks / whiteboard (multi-mounted at /api).
+  // Projects / groups / tasks (multi-mounted at /api).
   app.use('/api', require('./routes/projects'));
 
   // Citations (entities/listings/profile-health/publishers + audit).

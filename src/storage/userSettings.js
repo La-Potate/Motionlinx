@@ -14,14 +14,14 @@ function getUserDir(userId) {
  * Create a complete per-user directory tree.
  *   USERDATA/users/<userId>/
  *     settings.json
- *     projects/  whiteboard/  notes/  heatmaps/  exports/
+ *     projects/  notes/  heatmaps/  exports/
  */
 function ensureUserDir(userId) {
   if (userId === undefined || userId === null) return;
   const userDir = getUserDir(userId);
   ensureDir(userDir);
 
-  for (const sub of ['projects', 'whiteboard', 'notes', 'heatmaps', 'exports']) {
+  for (const sub of ['projects', 'notes', 'heatmaps', 'exports']) {
     ensureDir(path.join(userDir, sub));
   }
 

@@ -1,0 +1,13 @@
+-- Whiteboard feature removed.
+--
+-- The canvas, its route (`/whiteboard`), its API (`GET|POST /api/whiteboard`)
+-- and its per-user storage directory are all gone; this drops the last
+-- remaining artefact so a fresh clone and an upgraded install end up with the
+-- same schema.
+--
+-- Migration 001 still contains the original CREATE TABLE. That is deliberate:
+-- applied migrations are immutable history, so the table is created there and
+-- dropped here rather than edited out retroactively.
+--
+-- This is destructive — any saved canvases are deleted with the table.
+DROP TABLE IF EXISTS whiteboard_data;

@@ -37,12 +37,12 @@ export default function LoginPage({
   const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Honor ?next=/seo-toolkit so the Toolkit hub can deep-link to a specific
+  // Honor ?next=/dashboard so a guarded route can deep-link to a specific
   // app and resume after sign-in. Whitelist to relative paths to keep this
   // from being weaponised into an open-redirect.
   const rawNext = searchParams.get('next');
   const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
-  const postLoginPath = next || '/toolkit';
+  const postLoginPath = next || '/dashboard';
 
   const loginForm = useForm<LoginValues>();
   const signupForm = useForm<SignupValues>();

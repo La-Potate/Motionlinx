@@ -7,8 +7,8 @@ import { Button } from '@/shared/ui/button';
  * Auth-aware button shown in the LandingNav.
  * - Loading:        skeleton
  * - Trial user:     "Open Trial" → /trial
- * - Anyone else:    "Open Toolkit" → /toolkit (the hub decides per-app
- *                   whether to require sign-in)
+ * - Anyone else:    "Open Dashboard" → /dashboard (guarded; redirects to
+ *                   sign-in when there is no session)
  */
 export function AccountButton() {
   const { user, loading } = useAuth();
@@ -33,8 +33,8 @@ export function AccountButton() {
   }
 
   return (
-    <Button onClick={() => navigate('/toolkit')} className="gap-1.5">
-      Open Toolkit
+    <Button onClick={() => navigate('/dashboard')} className="gap-1.5">
+      Open Dashboard
       <ArrowRight className="size-3.5" />
     </Button>
   );
