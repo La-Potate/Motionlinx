@@ -15,13 +15,7 @@ import {
   type Accent,
   type ToolEntry,
 } from '@/app/nav-config';
-import {
-  accentBorderHover,
-  accentEdge,
-  accentText,
-  accentTile,
-  accentTileHover,
-} from '@/shared/lib/accent';
+import { accentBorderHover, accentText, accentTile } from '@/shared/lib/accent';
 import { stagger } from '@/shared/motion/presets';
 import { cn } from '@/shared/lib/cn';
 
@@ -331,55 +325,50 @@ function ToolRow({
   return (
     <div
       className={cn(
-        'group relative flex h-full overflow-hidden rounded-lg border border-border bg-surface',
+        'group flex h-full flex-col gap-2.5 rounded-lg border border-border bg-surface p-4',
         'transition-[border-color,box-shadow] duration-200 hover:shadow-elevation-sm',
         accentBorderHover(accent)
       )}
     >
-      {/* Section colour band — tells you at a glance which family a tool
-          belongs to when the grid is scanned rather than read. */}
-      <span
-        aria-hidden
-        className={cn('w-[3px] shrink-0', accentEdge(accent))}
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3.5">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex items-start gap-3 text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {/* The icon carries the section colour. One tinted element per card
+            keeps the grid scannable without banding or outlining anything. */}
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+            accentTile(accent)
+          )}
         >
-          <span
-            className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-muted transition-colors',
-              accentTileHover(accent)
-            )}
-          >
-            <Icon className="size-4" strokeWidth={1.75} />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">{tool.label}</span>
-            {tool.description && (
-              <span className="text-xs text-foreground-muted leading-snug line-clamp-2">
-                {tool.description}
-              </span>
-            )}
-          </span>
-          <ArrowUpRight className="mt-1 size-3.5 shrink-0 text-foreground-subtle opacity-0 transition-opacity group-hover:opacity-100" />
-        </button>
+          <Icon className="size-4.5" strokeWidth={1.75} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5 pt-0.5">
+          <span className="text-sm font-medium text-foreground">{tool.label}</span>
+          {tool.description && (
+            <span className="text-xs text-foreground-muted leading-snug line-clamp-2">
+              {tool.description}
+            </span>
+          )}
+        </span>
+        <ArrowUpRight className="mt-1 size-3.5 shrink-0 text-foreground-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+      </button>
 
+      <div className="mt-auto pl-12">
         {setup ? (
-          // Sends you to the exact field rather than the Settings landing.
           <button
             type="button"
             onClick={() => onSetup(tool.requires!)}
             title={`Add ${setup.what} in Settings`}
-            className="inline-flex w-fit items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-foreground-subtle transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground-subtle underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
           >
             <KeyRound className="size-2.5" />
             Needs {tool.requires}
           </button>
         ) : (
-          <span className={cn('inline-flex w-fit items-center gap-1 text-[10px] font-medium', accentText(accent))}>
+          <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', accentText(accent))}>
             <Check className="size-2.5" strokeWidth={3} />
             Ready to use
           </span>

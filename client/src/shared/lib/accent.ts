@@ -42,8 +42,8 @@ const TILE_HOVER: Record<Accent, string> = {
   butter: 'group-hover:bg-butter group-hover:text-butter-ink',
 };
 
-/** Left edge marker used to band a card to its section. */
-const EDGE: Record<Accent, string> = {
+/** Quiet dot used as an inline section marker. */
+const DOT: Record<Accent, string> = {
   mint: 'bg-mint-ink',
   sky: 'bg-sky-ink',
   lavender: 'bg-lavender-ink',
@@ -62,5 +62,5 @@ export const accentSurface = (a: Accent) => SURFACE[a];
 export const accentText = (a: Accent) => TEXT[a];
 export const accentTile = (a: Accent) => TILE[a];
 export const accentTileHover = (a: Accent) => TILE_HOVER[a];
-export const accentEdge = (a: Accent) => EDGE[a];
+export const accentDot = (a: Accent) => DOT[a];
 export const accentBorderHover = (a: Accent) => BORDER_HOVER[a];
