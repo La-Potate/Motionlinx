@@ -260,12 +260,57 @@ function attachShutdownHandlers() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
+/**
+ * Last-resort safety net for async errors that escape every try/catch.
+ *
+ * Express catches throws inside handlers, but an error raised on a detached
+ * async path — a node-sqlite3 'error' event with no listener, a floating
+ * promise — bypasses it entirely and, by default, terminates the process. For
+ * a single-process self-hosted app that means one stray error takes the whole
+ * instance offline for every user.
+ *
+ * We therefore log and keep serving. The trade-off is deliberate and worth
+ * stating: Node's own guidance is that a process may hold inconsistent state
+ * after an uncaught exception, so this is a net, NOT a licence to leave the
+ * underlying bug in place. Anything logged here is a defect to fix at source —
+ * these lines are logged at `fatal`/`error` precisely so they stay loud.
+ */
+function attachProcessGuards() {
+  process.on('unhandledRejection', (reason) => {
+    logger.error(
+      { err: reason instanceof Error ? reason : new Error(String(reason)) },
+      'Unhandled promise rejection — server kept running; fix the source',
+    );
+  });
+
+  process.on('uncaughtException', (err) => {
+    logger.fatal(
+      { err },
+      'Uncaught exception — server kept running, but process state may be unreliable; fix the source',
+    );
+  });
+}
+
 async function start() {
+  // Install the guards before anything can throw asynchronously.
+  attachProcessGuards();
   const app = await buildApp();
-  app.listen(envConfig.PORT, () => {
+  const server = app.listen(envConfig.PORT, () => {
     logger.info(`Server running on port ${envConfig.PORT}`);
     logger.info(`Environment: ${envConfig.NODE_ENV || 'development'}`);
   });
+
+  // Binding failures MUST stay fatal. The process guards above deliberately
+  // keep the process alive through runtime errors, but that must not extend
+  // to startup: a process that failed to bind (EADDRINUSE, EACCES) is not
+  // serving anything, and lingering would leave a zombie that a supervisor
+  // — Docker's restart policy, nodemon, systemd — never restarts. Exiting
+  // non-zero is the useful behaviour here.
+  server.on('error', (err) => {
+    logger.fatal({ err }, `Could not bind port ${envConfig.PORT} — exiting`);
+    process.exit(1);
+  });
+
   attachShutdownHandlers();
   return app;
 }

@@ -4,7 +4,7 @@ const express = require('express');
 const logger = require('../utils/logger');
 const authenticate = require('../middleware/authenticate');
 const { tieredRateLimit } = require('../middleware/rateLimits');
-const { dbGet, dbAll, dbRun, db } = require('../utils/dbAsync');
+const { dbGet, dbAll, dbRun, db, withTransaction } = require('../utils/dbAsync');
 const { getSystemApiKey } = require('../storage/systemSettings');
 const { readUserSettingsFromDisk } = require('../storage/userSettings');
 const { ensureFetch } = require('../utils/smartFetch');
@@ -67,36 +67,62 @@ router.post('/create', async (req, res) => {
     const countryCode = (country || 'US').toUpperCase();
     const sources = getSourcesForCountry(countryCode);
 
-    const result = await dbRun(
-      `INSERT INTO citation_audits
-       (user_id, business_name, business_website, business_address, business_phone,
-        business_city, business_state, business_zipcode, country, status, total_citations)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      [
-        req.user.id,
-        businessName,
-        businessWebsite || '',
-        businessAddress || '',
-        businessPhone || '',
-        businessCity || '',
-        businessState || '',
-        businessZipcode || '',
-        countryCode,
-        sources.length,
-      ],
-    );
-    const auditId = result.lastID;
+    // The audit row and its per-source result rows are written in ONE
+    // transaction, and every insert is awaited before we respond.
+    //
+    // Both properties matter. Previously the result rows were fired off with
+    // a callback-less `stmt.run()` and the response was sent immediately, so
+    // the inserts were still in flight after the client had the auditId. A
+    // client that deleted the audit in that window removed the parent row
+    // mid-flight, the pending inserts hit the audit_id foreign key, and
+    // node-sqlite3 surfaced the failure as an 'error' event on the Statement.
+    // With no listener attached that became an uncaught exception and killed
+    // the process. Awaiting each insert both propagates errors into this
+    // try/catch and closes the race window entirely.
+    const auditId = await withTransaction(async () => {
+      const result = await dbRun(
+        `INSERT INTO citation_audits
+         (user_id, business_name, business_website, business_address, business_phone,
+          business_city, business_state, business_zipcode, country, status, total_citations)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [
+          req.user.id,
+          businessName,
+          businessWebsite || '',
+          businessAddress || '',
+          businessPhone || '',
+          businessCity || '',
+          businessState || '',
+          businessZipcode || '',
+          countryCode,
+          sources.length,
+        ],
+      );
+      const newAuditId = result.lastID;
 
-    // Insert one pending result row per source. Use a prepared statement
-    // because this can be 50+ inserts.
-    const stmt = db.prepare(
-      `INSERT INTO citation_audit_results (audit_id, source_id, source_name, source_url, status)
-       VALUES (?, ?, ?, ?, 'pending')`,
-    );
-    for (const source of sources) {
-      stmt.run([auditId, source.id, source.name, source.url]);
-    }
-    stmt.finalize();
+      // Prepared statement because this can be 50+ inserts.
+      const stmt = db.prepare(
+        `INSERT INTO citation_audit_results (audit_id, source_id, source_name, source_url, status)
+         VALUES (?, ?, ?, ?, 'pending')`,
+      );
+      try {
+        for (const source of sources) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve, reject) => {
+            stmt.run([newAuditId, source.id, source.name, source.url], (err) =>
+              err ? reject(err) : resolve(),
+            );
+          });
+        }
+      } finally {
+        // Always release the statement, even if an insert rejected above —
+        // otherwise the handle leaks and the transaction can't be rolled back.
+        await new Promise((resolve) => {
+          stmt.finalize(() => resolve());
+        });
+      }
+      return newAuditId;
+    });
 
     res.json({ success: true, auditId });
   } catch (err) {

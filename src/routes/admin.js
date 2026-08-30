@@ -106,11 +106,17 @@ router.post('/users', validateAdminSignup, async (req, res) => {
 
 router.put('/users/:id', async (req, res) => {
   const userId = req.params.id;
-  const { username, email, role, is_active, credits, credit_limit } = req.body;
+  // NOTE: `credit_limit` is deliberately absent here. It is NOT a column on
+  // `users` — no migration has ever created one. It is derived per request in
+  // services/auth.js from getPlanForRole(role).monthlyCredits, and the admin
+  // UI only ever renders it read-only. Selecting or writing it here raised
+  // `SQLITE_ERROR: no such column: credit_limit`, which made this endpoint
+  // fail for every input. A user's ceiling changes by changing their role.
+  const { username, email, role, is_active, credits } = req.body;
 
   try {
     const existing = await dbGet(
-      'SELECT username, email, role, is_active, credits, credit_limit FROM users WHERE id = ?',
+      'SELECT username, email, role, is_active, credits FROM users WHERE id = ?',
       [userId],
     );
     if (!existing) return res.status(404).json({ error: 'User not found' });
@@ -131,12 +137,11 @@ router.put('/users/:id', async (req, res) => {
       email: email !== undefined ? email : existing.email,
       is_active: is_active !== undefined ? is_active : existing.is_active,
       credits: credits !== undefined ? credits : existing.credits,
-      credit_limit: credit_limit !== undefined ? credit_limit : existing.credit_limit,
     };
 
     const result = await dbRun(
-      'UPDATE users SET username = ?, email = ?, role = ?, is_active = ?, credits = ?, credit_limit = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [next.username, next.email, normalizedRole, next.is_active, next.credits, next.credit_limit, userId],
+      'UPDATE users SET username = ?, email = ?, role = ?, is_active = ?, credits = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [next.username, next.email, normalizedRole, next.is_active, next.credits, userId],
     );
     if (!result.changes) return res.status(404).json({ error: 'User not found' });
 
