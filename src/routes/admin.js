@@ -6,7 +6,7 @@ const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { dbGet, dbAll, dbRun } = require('../utils/dbAsync');
 const { USER_LEVEL_SET, DEFAULT_USER_LEVEL } = require('../utils/userLevel');
-const { getPlanForRole } = require('../services/credits');
+const { getPlanForRole, applyCreditChange } = require('../services/credits');
 const authenticate = require('../middleware/authenticate');
 const requireAdmin = require('../middleware/requireAdmin');
 const {
@@ -175,14 +175,29 @@ router.post('/users/:id/credits', async (req, res) => {
   if (Number.isNaN(parsedAmount)) {
     return res.status(400).json({ error: 'Amount must be a valid integer' });
   }
+  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim()
+    ? req.body.reason.trim()
+    : 'admin_adjustment';
+
   try {
-    const result = await dbRun(
-      'UPDATE users SET credits = COALESCE(credits, 0) + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [parsedAmount, userId],
+    const existing = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+
+    // Goes through the credits service rather than a bare UPDATE so the change
+    // is written to credit_transactions. Previously an admin grant moved the
+    // balance and left no audit row at all, which is why the credit-usage
+    // report could only ever be empty.
+    //
+    // allowNegative is true to preserve the previous behaviour: an admin
+    // deduction was always applied, even past zero.
+    const credits = await applyCreditChange(
+      userId,
+      parsedAmount,
+      reason,
+      { source: 'admin', adminId: req.user.id },
+      true,
     );
-    if (!result.changes) return res.status(404).json({ error: 'User not found' });
-    const updated = await dbGet('SELECT credits FROM users WHERE id = ?', [userId]);
-    res.json({ message: 'Credits updated', credits: updated?.credits ?? null });
+    res.json({ message: 'Credits updated', credits });
   } catch (err) {
     logger.error({ err }, 'Failed to update credits');
     res.status(500).json({ error: 'Unable to update credits' });

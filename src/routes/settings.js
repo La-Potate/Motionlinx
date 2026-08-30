@@ -49,20 +49,31 @@ router.get('/ip', (req, res) => {
 router.get('/prompts', requireAdmin, (req, res) => {
   try {
     const settings = readSystemSettings();
-    const prompts = settings.prompts || getDefaultSystemSettings().prompts;
-    res.json({ prompts });
+    const defaults = getDefaultSystemSettings().prompts;
+    const prompts = settings.prompts || defaults;
+    // `defaults` ships alongside so the UI can offer "reset to default"
+    // without hardcoding a second copy of the prompt text.
+    res.json({ prompts, defaults, editable: EDITABLE_PROMPTS });
   } catch (err) {
     logger.error({ err }, 'Failed to fetch prompts');
     res.status(500).json({ error: 'Failed to fetch prompts.' });
   }
 });
 
+// Editable content prompts. `beyondIntent` is deliberately absent: that tool
+// is a nine-step chain whose prompt for each step is assembled from the
+// previous step's output, so it has no single prompt to edit here.
+const EDITABLE_PROMPTS = ['blogPost', 'pressRelease'];
+
 router.post('/prompts', requireAdmin, (req, res) => {
   try {
-    const { blogPost } = req.body || {};
+    const body = req.body || {};
     const updates = {};
-    if (typeof blogPost === 'string' && blogPost.trim()) {
-      updates.blogPost = blogPost.trim();
+    for (const key of EDITABLE_PROMPTS) {
+      const value = body[key];
+      if (typeof value === 'string' && value.trim()) {
+        updates[key] = value.trim();
+      }
     }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid prompts provided.' });

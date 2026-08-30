@@ -23,19 +23,6 @@ router.use(authenticate);
 // Claude API calls are heavy; CRUD reads/writes on saved drafts are cheap.
 const claudeLimit = tieredRateLimit('heavy');
 
-const CLAUDE_SYSTEM_PROMPT = `Your Job is to create a press release to advertise the service. Check the given Website in exact link. Parse 3 info: Website, Author, Primary service provided.
-Find the Google Business related to it and cross check the website is correct.
-Check what the website is about. Find the keywords and topics of the websites and main services.
-Check where the services are needed and who needs the service. Check Current Date, any recent news for "problems" for stats and to provide the service as solution option.
-Reference news date range must be within last 2 months max from today. Mention the news in the press release.
-Max: 700-800 Words.
-
-Structure:
-PR Title (100 Characters) Title must adhere to current time / season / situation
-PR Subtitle (150 Characters)
-PR Body - 700 Words
-Must mention Keyword / Service, a naked link of the website to link to, author, and 1 sentence saying "Contact (website company name)"
-Sources - 5 sources max, in APA style.`;
 
 function pickClaudeKey() {
   return resolveClaudeKey(getSystemApiKey('claude'));
@@ -68,7 +55,11 @@ router.post('/press-release', claudeLimit, async (req, res) => {
     const data = await requestClaudeMessages(
       {
         temperature: 1,
-        system: CLAUDE_SYSTEM_PROMPT,
+        // Configurable in Settings -> Prompts, same as the blog-post prompt.
+        // Falls back to the shipped default when nothing has been saved.
+        system:
+          readSystemSettings().prompts?.pressRelease ||
+          getDefaultSystemSettings().prompts.pressRelease,
         messages: [
           {
             role: 'user',

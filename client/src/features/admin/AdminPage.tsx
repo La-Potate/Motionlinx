@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import {
+  Zap,
+  Download,
   Users,
   UserPlus,
   UserMinus,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { userService } from '@/shared/api/user';
+import authenticatedFetch from '@/shared/api/httpClient';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
@@ -51,6 +54,7 @@ import {
   DialogDescription,
 } from '@/shared/ui/dialog';
 import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 import { stagger } from '@/shared/motion/presets';
 import { cn } from '@/shared/lib/cn';
 
@@ -108,6 +112,12 @@ export default function AdminPage() {
     loading: boolean;
     error: string;
   }>({ items: [], loading: false, error: '' });
+  const [usage, setUsage] = useState<{
+    items: any[];
+    loading: boolean;
+    error: string;
+  }>({ items: [], loading: false, error: '' });
+  const [usageUser, setUsageUser] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -165,6 +175,44 @@ export default function AdminPage() {
         error: err?.response?.data?.error || err?.message || 'Failed to load activity',
       });
     }
+  };
+
+  const loadUsage = async (userId?: string) => {
+    setUsage({ items: [], loading: true, error: '' });
+    try {
+      const qs = new URLSearchParams({ limit: '200' });
+      if (userId && userId !== 'all') qs.set('userId', userId);
+      const res = await authenticatedFetch(`/api/admin/credit-usage?${qs.toString()}`, {
+        method: 'GET',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load usage');
+      setUsage({
+        items: Array.isArray(data?.transactions) ? data.transactions : [],
+        loading: false,
+        error: '',
+      });
+    } catch (err: any) {
+      setUsage({ items: [], loading: false, error: err?.message || 'Failed to load usage' });
+    }
+  };
+
+  const exportUsage = () => {
+    if (!usage.items.length) return;
+    downloadCsv(
+      stampedName('credit-usage'),
+      ['date', 'user_id', 'username', 'email', 'change', 'balance_after', 'reason', 'service'],
+      usage.items.map((t: any) => [
+        t.createdAt ?? '',
+        t.userId ?? '',
+        t.username ?? '',
+        t.email ?? '',
+        t.change ?? '',
+        t.balanceAfter ?? '',
+        t.reason ?? '',
+        t.meta?.service ?? '',
+      ])
+    );
   };
 
   const onRoleChange = async (uid: number, role: string) => {
@@ -360,6 +408,9 @@ export default function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="activity">
             <Activity className="size-3.5" /> Activity
+          </TabsTrigger>
+          <TabsTrigger value="usage" onClick={() => loadUsage(usageUser)}>
+            <Zap className="size-3.5" /> Credit usage
           </TabsTrigger>
           <TabsTrigger value="stats">
             <BarChart3 className="size-3.5" /> Statistics
@@ -604,6 +655,102 @@ export default function AdminPage() {
                     </motion.li>
                   ))}
                 </motion.ul>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="usage">
+          <Card layout>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <CardTitle>Credit usage</CardTitle>
+                  <p className="text-sm text-foreground-muted">
+                    Every credit movement, newest first. Last 200.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={usageUser}
+                    onValueChange={(v) => {
+                      setUsageUser(v);
+                      loadUsage(v);
+                    }}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="All users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All users</SelectItem>
+                      {users.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.username}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    onClick={exportUsage}
+                    disabled={!usage.items.length}
+                  >
+                    <Download className="size-3.5" /> Export CSV
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {usage.loading ? (
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-12" />
+                  <Skeleton className="h-12" />
+                  <Skeleton className="h-12" />
+                </div>
+              ) : usage.error ? (
+                <p className="text-sm text-rose-ink">{usage.error}</p>
+              ) : usage.items.length === 0 ? (
+                <p className="text-sm text-foreground-subtle">
+                  No credit movements recorded yet. Entries appear here as users spend
+                  credits or an admin grants them.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {usage.items.map((t: any) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {t.username || `User ${t.userId}`}
+                          {t.meta?.service ? (
+                            <span className="ml-2 font-normal text-foreground-muted">
+                              {t.meta.service}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="truncate text-xs text-foreground-muted">
+                          {t.reason || '—'} · {formatDate(t.createdAt)}
+                        </span>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span
+                          className={cn(
+                            'font-mono text-sm tabular-nums',
+                            Number(t.change) < 0 ? 'text-rose-ink' : 'text-mint-ink'
+                          )}
+                        >
+                          {Number(t.change) > 0 ? '+' : ''}
+                          {t.change}
+                        </span>
+                        <div className="text-[11px] text-foreground-subtle tabular-nums">
+                          bal {t.balanceAfter ?? '—'}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

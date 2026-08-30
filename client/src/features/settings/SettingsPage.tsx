@@ -765,7 +765,9 @@ function ApiKeysCard() {
 function PromptsCard() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [blogPost, setBlogPost] = useState('');
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [defaults, setDefaults] = useState<Record<string, string>>({});
+  const [editable, setEditable] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -773,7 +775,11 @@ function PromptsCard() {
         const res = await authenticatedFetch('/api/settings/prompts', { method: 'GET' });
         if (res.ok) {
           const data = await res.json();
-          setBlogPost(data.prompts?.blogPost || '');
+          setPrompts(data.prompts || {});
+          setDefaults(data.defaults || {});
+          // The server decides which prompts are editable, so this list does
+          // not have to be kept in sync by hand on both sides.
+          setEditable(data.editable || Object.keys(data.prompts || {}));
         }
       } finally {
         setLoading(false);
@@ -785,9 +791,13 @@ function PromptsCard() {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload: Record<string, string> = {};
+      editable.forEach((k) => {
+        if (prompts[k]?.trim()) payload[k] = prompts[k];
+      });
       const res = await authenticatedFetch('/api/settings/prompts', {
         method: 'POST',
-        body: JSON.stringify({ blogPost }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) toast.success('Prompts saved');
       else toast.error('Failed to save');
@@ -800,6 +810,17 @@ function PromptsCard() {
 
   if (loading) return <Skeleton className="h-64" />;
 
+  const META: Record<string, { label: string; help: string }> = {
+    blogPost: {
+      label: 'Blog post',
+      help: 'Used by the Blog Post generator. The user supplies the URL, topic and word count.',
+    },
+    pressRelease: {
+      label: 'Press release',
+      help: 'Used by the Press Release generator. The user supplies the website, author and service.',
+    },
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -807,22 +828,52 @@ function PromptsCard() {
           <FileText className="size-4" /> Content prompts
         </CardTitle>
         <p className="text-sm text-foreground-muted">
-          System prompt used when generating blog posts. Users provide URL, word count, and topic.
+          System prompts used by the content generators. These apply to everyone on
+          the workspace.
         </p>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="blogPostPrompt">Blog post system prompt</Label>
-            <Textarea
-              id="blogPostPrompt"
-              value={blogPost}
-              onChange={(e) => setBlogPost(e.target.value)}
-              rows={14}
-              placeholder="You are a senior content editor specializing in…"
-              className="font-mono text-xs"
-            />
-          </div>
+        <form onSubmit={onSubmit} className="flex flex-col gap-6">
+          {editable.map((key) => {
+            const meta = META[key] || { label: key, help: '' };
+            const isDefault = prompts[key] === defaults[key];
+            return (
+              <div key={key} data-field={`${key}Prompt`} className="flex flex-col gap-1.5 rounded-lg">
+                <div className="flex items-baseline justify-between gap-3">
+                  <Label htmlFor={`${key}Prompt`}>{meta.label} system prompt</Label>
+                  <button
+                    type="button"
+                    disabled={isDefault}
+                    onClick={() =>
+                      setPrompts((p) => ({ ...p, [key]: defaults[key] || '' }))
+                    }
+                    className="text-xs text-foreground-muted underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-40 disabled:no-underline"
+                  >
+                    {isDefault ? 'Unchanged from default' : 'Reset to default'}
+                  </button>
+                </div>
+                {meta.help && (
+                  <span className="text-xs text-foreground-muted">{meta.help}</span>
+                )}
+                <Textarea
+                  id={`${key}Prompt`}
+                  value={prompts[key] || ''}
+                  onChange={(e) =>
+                    setPrompts((p) => ({ ...p, [key]: e.target.value }))
+                  }
+                  rows={12}
+                  className="font-mono text-xs"
+                />
+              </div>
+            );
+          })}
+
+          <p className="text-xs text-foreground-muted">
+            Beyond Intent is not listed: it runs a nine-step chain and builds each
+            step&rsquo;s prompt from the previous step&rsquo;s output, so it has no single
+            prompt to edit here.
+          </p>
+
           <div>
             <Button type="submit" disabled={saving}>
               <Save className="size-4" /> {saving ? 'Saving…' : 'Save prompts'}
