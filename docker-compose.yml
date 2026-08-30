@@ -1,20 +1,29 @@
 services:
   web:
+    # Builds from this directory — there is no published image and nothing is
+    # pulled from GitHub. `docker compose up --build` builds the local source.
     build: .
-    container_name: seo-toolkit-api
+    image: motionlinx:local
+    container_name: motionlinx
     environment:
       - NODE_ENV=production
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
-      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:2255}
       - PORT=3000
       - USERDATA_PATH=/var/lib/app-data
+      # Required in production — the server refuses to boot without these.
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:2255}
+      # Optional. Without MASTER_KEY, saved API keys are written to disk in
+      # plaintext; set it and migration 006 encrypts the existing rows.
+      - MASTER_KEY=${MASTER_KEY:-}
+      # Optional. Enables Sign in with Google, GA4 and Search Console.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      # Optional bootstrap for a fresh database. Without it, production
+      # refuses to auto-create an admin and you must seed one yourself.
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
     ports:
       - "2255:3000"
     restart: unless-stopped
     volumes:
       - ${USERDATA_PATH:-./app-data}:/var/lib/app-data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # Healthcheck is defined in the Dockerfile so it stays with the image and
+    # needs no curl in the container.

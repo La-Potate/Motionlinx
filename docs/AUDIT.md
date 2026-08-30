@@ -43,8 +43,8 @@ MotionLinx Toolkit/
 ├── client/                   ← Vite + React 18 + TypeScript-leaning SPA
 ├── tests/                    ← vitest backend smoke tests (23 passing)
 ├── app-data/                 ← runtime storage (gitignored)
-├── docker-compose.yml        ← single web service, USERDATA_PATH-mounted volume
-├── Dockerfile                ← Node 20, non-root user
+├── docker-compose.yml        ← builds locally (no registry), USERDATA_PATH volume
+├── Dockerfile                ← Node 20 (Debian slim), multi-stage, Chromium, non-root
 ├── .env.example              ← every env var documented
 ├── docs/
 │   ├── ENV_KEYS.md           ← how to get each API key + production checklist

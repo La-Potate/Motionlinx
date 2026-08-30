@@ -9,6 +9,11 @@ README.md
 *.md
 .env
 .env.*
+# Dotless variant. Not copied by the current Dockerfile (which copies
+# specific paths, not `.`), but excluded so a future broad COPY cannot
+# bake real secrets into an image.
+env
+env.*
 .nyc_output
 coverage
 app-data
