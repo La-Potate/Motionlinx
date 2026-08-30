@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ExternalLink, ShieldAlert, Globe } from 'lucide-react';
 import siteMarkerService from '@/shared/api/siteMarker';
+import { SiteMarkerAnnotator } from './components/SiteMarkerAnnotator';
 import { Card, CardContent } from '@/shared/ui/card';
 import { Badge } from '@/shared/ui/badge';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -11,6 +12,10 @@ import { Wordmark } from '@/shared/components/Wordmark';
 export default function SharedSiteMarkerPage() {
   const { shareToken } = useParams();
   const [data, setData] = useState<any>(null);
+  // The endpoint returns the captured html and its markers; this page used
+  // to discard both and frame the live URL instead, so a recipient saw the
+  // current site with none of the annotations that were shared with them.
+  const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -19,6 +24,7 @@ export default function SharedSiteMarkerPage() {
       try {
         const payload = await siteMarkerService.getSharedPage(shareToken);
         setData(payload?.page || payload);
+        setHtml(payload?.html || '');
       } catch (err: any) {
         setError(err?.message || 'Failed to load shared page');
       } finally {
@@ -90,12 +96,19 @@ export default function SharedSiteMarkerPage() {
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-0">
-                <iframe
-                  title={data.title || 'Shared site marker'}
-                  src={data.url}
-                  className="w-full h-[720px] rounded-lg border-0"
-                />
+              <CardContent className="p-4">
+                {html ? (
+                  <SiteMarkerAnnotator
+                    html={html}
+                    markers={Array.isArray(data.markers) ? data.markers : []}
+                    onSave={() => {}}
+                    readOnly
+                  />
+                ) : (
+                  <p className="text-sm text-foreground-muted">
+                    This shared capture has no stored page content.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </motion.div>

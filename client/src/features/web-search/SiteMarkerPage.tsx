@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import siteMarkerService from '@/shared/api/siteMarker';
+import { SiteMarkerAnnotator } from './components/SiteMarkerAnnotator';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Card, CardContent } from '@/shared/ui/card';
@@ -40,6 +41,12 @@ export default function SiteMarkerPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ url: '', title: '' });
   const [copied, setCopied] = useState(false);
+  // The stored capture and its markers, fetched when a page is selected.
+  // Previously this page framed the LIVE url, so what you looked at was not
+  // the thing that had been captured — and markers had nothing to attach to.
+  const [capture, setCapture] = useState<{ html: string; markers: any[] } | null>(null);
+  const [loadingCapture, setLoadingCapture] = useState(false);
+  const [savingMarkers, setSavingMarkers] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -56,6 +63,57 @@ export default function SiteMarkerPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  // Load the capture whenever the selection changes.
+  useEffect(() => {
+    const id = selected?.id;
+    if (!id) {
+      setCapture(null);
+      return;
+    }
+    let alive = true;
+    setLoadingCapture(true);
+    setCapture(null);
+    siteMarkerService
+      .getPage(id)
+      .then((data: any) => {
+        if (!alive) return;
+        setCapture({
+          html: data?.html || '',
+          markers: Array.isArray(data?.page?.markers) ? data.page.markers : [],
+        });
+      })
+      .catch((err: any) => {
+        if (alive) toast.error(err?.message || 'Failed to load the captured page');
+      })
+      .finally(() => {
+        if (alive) setLoadingCapture(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selected?.id]);
+
+  const onSaveMarkers = async (markers: any[]) => {
+    if (!selected?.id) return;
+    setSavingMarkers(true);
+    try {
+      const data: any = await siteMarkerService.saveMarkers(selected.id, markers);
+      setCapture((prev) => (prev ? { ...prev, markers } : prev));
+      // Keep the list's marker count in step with what was just saved.
+      if (data?.page) {
+        setPages((prev) =>
+          prev.map((p) => (p.id === selected.id ? { ...p, ...data.page } : p))
+        );
+        setSelected((prev: any) => (prev ? { ...prev, ...data.page } : prev));
+      }
+      toast.success('Markers saved');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save markers');
+    } finally {
+      setSavingMarkers(false);
+    }
+  };
 
   const onCreate = async () => {
     if (!form.url.trim()) {
@@ -244,12 +302,21 @@ export default function SiteMarkerPage() {
               )}
 
               <Card>
-                <CardContent className="p-0">
-                  <iframe
-                    title={selected.title || 'Site marker'}
-                    src={selected.url}
-                    className="w-full h-[640px] rounded-lg border-0"
-                  />
+                <CardContent className="p-4">
+                  {loadingCapture ? (
+                    <Skeleton className="h-[520px] w-full" />
+                  ) : capture ? (
+                    <SiteMarkerAnnotator
+                      html={capture.html}
+                      markers={capture.markers}
+                      saving={savingMarkers}
+                      onSave={onSaveMarkers}
+                    />
+                  ) : (
+                    <p className="text-sm text-foreground-muted">
+                      This capture has no stored page content.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </>

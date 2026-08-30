@@ -1,8 +1,9 @@
-﻿import { useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import {
   Sparkles,
   Loader2,
   MapPin,
+  History,
   Star,
   Phone,
   Globe,
@@ -42,6 +43,41 @@ export default function GbaAuditPage() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState<any>(null);
+  // Every successful audit is already saved server-side; this page simply
+  // never read it back, so results vanished the moment you navigated away.
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewingSaved, setViewingSaved] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const res: any = await serpService.getBusinessHistory();
+      if (res?.ok) setHistory(res.data?.data || []);
+    } catch {
+      // Non-fatal: the audit itself still works without the saved list.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const openSaved = async (id: string) => {
+    setBusy(true);
+    try {
+      const res: any = await serpService.getBusinessHistoryItem(id);
+      if (!res?.ok) throw new Error(res?.data?.error || 'Could not open that audit');
+      const item = res.data?.data;
+      setData(item?.data || null);
+      setViewingSaved(id);
+      setHistoryOpen(false);
+      if (!item?.data) toast.info?.('That saved audit has no stored detail.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not open that audit');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onRun = async () => {
     if (!input.trim()) {
@@ -56,6 +92,8 @@ export default function GbaAuditPage() {
       });
       if (!res?.success) throw new Error(res?.error || 'Failed to fetch business');
       setData(res.data);
+      setViewingSaved(null);
+      loadHistory();
     } catch (err: any) {
       toast.error(err?.message || 'Audit failed');
       setData(null);
@@ -94,9 +132,69 @@ export default function GbaAuditPage() {
                 </>
               )}
             </Button>
+            {history.length > 0 && (
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setHistoryOpen((v) => !v)}
+              >
+                <History className="size-4" />
+                Saved ({history.length})
+              </Button>
+            )}
           </div>
+
+          {historyOpen && history.length > 0 && (
+            <div className="mt-4 flex flex-col gap-1 rounded-lg border border-border">
+              <div className="border-b border-border px-3 py-2">
+                <p className="text-xs text-foreground-muted">
+                  Your most recent audit for each business, newest first. Re-auditing a
+                  business replaces its saved entry.
+                </p>
+              </div>
+              <ul className="max-h-72 overflow-auto">
+                {history.map((h) => (
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      onClick={() => openSaved(h.id)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none"
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {h.title || 'Unknown business'}
+                        </span>
+                        <span className="text-xs text-foreground-muted">
+                          {h.auditAt ? new Date(h.auditAt).toLocaleString() : '—'}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-xs text-foreground-muted tabular-nums">
+                        {typeof h.rating === 'number' && (
+                          <span className="inline-flex items-center gap-1">
+                            <Star className="size-3" /> {h.rating}
+                          </span>
+                        )}
+                        {h.reviewCount ? <span>{h.reviewCount} reviews</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {viewingSaved && data && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-sky bg-sky/25 px-4 py-2.5">
+          <span className="text-sm text-foreground">
+            Showing a saved audit, not a fresh lookup.
+          </span>
+          <Button size="sm" variant="outline" onClick={onRun} disabled={busy || !input.trim()}>
+            Re-run
+          </Button>
+        </div>
+      )}
 
       {!data ? (
         <EmptyState
