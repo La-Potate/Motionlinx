@@ -1,5 +1,6 @@
 ﻿import { useMemo, useState } from 'react';
 import {
+  Download,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
   TableRow,
 } from '@/shared/ui/table';
 import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 import { cn } from '@/shared/lib/cn';
 
 const MAX_URLS = 50;
@@ -69,6 +71,22 @@ export default function BulkHttpPage() {
   const [notes, setNotes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
+  const exportCsv = () => {
+    if (!results.length) return;
+    downloadCsv(
+      stampedName('http-check'),
+      ['url', 'final_status', 'final_url', 'redirected', 'hops', 'chain'],
+      results.map((r: any) => [
+        r.url,
+        r.finalStatus,
+        r.finalUrl ?? '',
+        r.redirected ? 'yes' : 'no',
+        r.chain?.length ?? 0,
+        (r.chain || []).map((h: any) => `${h.status} ${h.url}`).join(' -> '),
+      ])
+    );
+  };
+
   const urls = useMemo(
     () =>
       raw
@@ -110,6 +128,13 @@ export default function BulkHttpPage() {
       title="Bulk HTTP checker"
       description="Inspect HTTP responses and follow redirect chains for every URL in a batch. HEAD with GET fallback, max 10 hops per URL."
       twoColumn
+      actions={
+        results.length ? (
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download className="size-3.5" /> Export CSV
+          </Button>
+        ) : undefined
+      }
     >
       <Card>
         <CardHeader>

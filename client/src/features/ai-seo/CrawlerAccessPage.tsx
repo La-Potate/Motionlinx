@@ -1,5 +1,6 @@
 ﻿import { useMemo, useState } from 'react';
 import {
+  Download,
   Bot,
   CheckCircle2,
   ExternalLink,
@@ -20,11 +21,16 @@ import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Badge } from '@/shared/ui/badge';
 import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 import { stagger } from '@/shared/motion/presets';
 import { cn } from '@/shared/lib/cn';
 
 type Entry = { id: string; label: string; allowed: boolean; reason: string };
 type Result = {
+  // The endpoint also returns the resolved domain and the raw robots.txt;
+  // both were absent from this type, so neither could be used.
+  domain?: string;
+  raw?: string;
   missing?: boolean;
   robotsUrl?: string;
   status?: number;
@@ -64,12 +70,35 @@ export default function CrawlerAccessPage() {
     }
   };
 
+  const exportCsv = () => {
+    const rows = result?.results || [];
+    if (!rows.length) return;
+    downloadCsv(
+      stampedName(`crawler-access-${result?.domain || 'site'}`),
+      ['bot', 'allowed', 'matched_agent', 'matched_rule', 'reason'],
+      rows.map((r: any) => [
+        r.label ?? r.id ?? '',
+        r.allowed ? 'allowed' : 'blocked',
+        r.matchedAgent ?? '',
+        r.matchedRule ?? '',
+        r.reason ?? '',
+      ])
+    );
+  };
+
   return (
     <ToolPage
       eyebrow="AI SEO"
       icon={Shield}
       title="Crawler access checker"
       description="Confirm whether GPTBot, ClaudeBot, Perplexity, Google-Extended, Meta, and other LLM crawlers can read your site."
+      actions={
+        (result?.results || []).length ? (
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download className="size-3.5" /> Export CSV
+          </Button>
+        ) : undefined
+      }
     >
       <Card>
         <CardContent className="p-6">

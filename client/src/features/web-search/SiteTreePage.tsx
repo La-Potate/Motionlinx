@@ -1,7 +1,8 @@
 ﻿import { useMemo, useState } from 'react';
-import { Globe, Loader2, ChevronDown, ChevronRight, Download, RefreshCw, GitBranch } from 'lucide-react';
+import { Globe, Network, Loader2, ChevronDown, ChevronRight, Download, RefreshCw, GitBranch } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import authenticatedFetch from '@/shared/api/httpClient';
+import spiderService from '@/shared/api/spider';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Card, CardContent } from '@/shared/ui/card';
@@ -65,6 +66,11 @@ export default function SiteTreePage() {
   const [busy, setBusy] = useState(false);
   const [urls, setUrls] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['root']));
+  /** Which route produced the current tree, shown alongside the count. */
+  const [source, setSource] = useState<'sitemap' | 'crawl' | null>(null);
+  /** Set when the sitemap route found nothing, so we can offer the crawler
+   *  instead of leaving the user on a dead end. */
+  const [canCrawl, setCanCrawl] = useState(false);
 
   const tree = useMemo(() => buildTree(urls), [urls]);
   const total = urls.length;
@@ -76,6 +82,7 @@ export default function SiteTreePage() {
     }
     setBusy(true);
     setExpanded(new Set(['root']));
+    setCanCrawl(false);
     try {
       const res = await authenticatedFetch('/api/web-search/site-tree/sitemap', {
         method: 'POST',
@@ -83,10 +90,47 @@ export default function SiteTreePage() {
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to fetch sitemap');
-      setUrls(data.urls || []);
-      if ((data.urls || []).length === 0) toast.info?.('No URLs found.');
+      const found: string[] = data.urls || [];
+      setUrls(found);
+      setSource(found.length ? 'sitemap' : null);
+      if (!found.length) {
+        // Plenty of sites publish no sitemap. Offer the crawler rather than
+        // ending on "nothing found" — it is a separate, slower operation, so
+        // it stays opt-in instead of running automatically.
+        setCanCrawl(true);
+        toast.info?.('No sitemap found — you can crawl the site instead.');
+      }
     } catch (err: any) {
+      setUrls([]);
+      setSource(null);
+      setCanCrawl(true);
       toast.error(err?.message || 'Failed to fetch sitemap');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Fallback discovery: follow internal links instead of reading a sitemap. */
+  const onCrawl = async () => {
+    if (!target.trim()) {
+      toast.error('Enter a domain or full URL.');
+      return;
+    }
+    setBusy(true);
+    setCanCrawl(false);
+    setExpanded(new Set(['root']));
+    try {
+      const data: any = await spiderService.crawl(target.trim(), { crawlLimit: 200 });
+      const found: string[] = (data?.nodes || [])
+        .map((n: any) => n?.url)
+        .filter((u: any): u is string => typeof u === 'string' && u.length > 0);
+      setUrls(found);
+      setSource(found.length ? 'crawl' : null);
+      if (!found.length) toast.info?.('Crawl finished without finding linked pages.');
+      else toast.success(`Crawled ${found.length} page${found.length === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Crawl failed');
+      setCanCrawl(true);
     } finally {
       setBusy(false);
     }
@@ -171,6 +215,23 @@ export default function SiteTreePage() {
               )}
             </Button>
           </div>
+
+          {canCrawl && !busy && (
+            <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-muted/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  No sitemap to read
+                </span>
+                <span className="text-xs text-foreground-muted">
+                  Crawl the site instead — follows internal links, up to 200 pages.
+                  Slower than a sitemap, but works on sites that do not publish one.
+                </span>
+              </div>
+              <Button variant="outline" size="sm" onClick={onCrawl} className="shrink-0">
+                <Network className="size-3.5" /> Crawl instead
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -178,7 +239,7 @@ export default function SiteTreePage() {
         <EmptyState
           icon={Globe}
           title="No tree yet"
-          description="Enter a domain and we'll fetch its sitemap and assemble a structured tree."
+          description="Enter a domain and we'll read its sitemap. If it has none, you can crawl the site instead."
         />
       ) : (
         <Card>
@@ -187,6 +248,11 @@ export default function SiteTreePage() {
               <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold">Discovered URLs</span>
                 <Badge variant="outline">{total.toLocaleString()}</Badge>
+                {source && (
+                  <Badge variant={source === 'sitemap' ? 'sky' : 'lavender'}>
+                    via {source}
+                  </Badge>
+                )}
               </div>
             </div>
             <ScrollArea className="h-[600px]">

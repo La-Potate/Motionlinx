@@ -1,5 +1,6 @@
 ﻿import { useMemo, useState } from 'react';
 import {
+  Download,
   ListChecks,
   Loader2,
   CheckCircle2,
@@ -24,7 +25,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/ui/table';
+import { Label } from '@/shared/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/ui/select';
 import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 
 const MAX_URLS = 100;
 
@@ -39,6 +49,12 @@ type Item = {
 
 export default function BulkIndexPage() {
   const [raw, setRaw] = useState('');
+  // The backend supports three lookup routes; only the first was reachable
+  // before. Each needs a different credential, named in the picker so it is
+  // clear before you run rather than after it fails.
+  const [mode, setMode] = useState<'dataforseo-dual' | 'dataforseo' | 'google-api'>(
+    'dataforseo-dual'
+  );
   const [results, setResults] = useState<Item[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +81,7 @@ export default function BulkIndexPage() {
     setResults([]);
     setSummary(null);
     try {
-      const data = await indexCheckerService.checkBulk(urls, { mode: 'dataforseo-dual' });
+      const data = await indexCheckerService.checkBulk(urls, { mode });
       setResults(data.results || []);
       setSummary(data.summary || null);
     } catch (err: any) {
@@ -73,6 +89,22 @@ export default function BulkIndexPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const exportCsv = () => {
+    if (!results.length) return;
+    downloadCsv(
+      stampedName('index-check'),
+      ['url', 'google', 'bing', 'title', 'snippet', 'first_result'],
+      results.map((r: any) => [
+        r.url,
+        r.google?.status ?? r.status ?? '',
+        r.bing?.status ?? '',
+        r.firstResult?.title ?? '',
+        r.firstResult?.snippet ?? '',
+        r.firstResult?.link ?? '',
+      ])
+    );
   };
 
   const pct = Math.min((urls.length / MAX_URLS) * 100, 100);
@@ -83,6 +115,13 @@ export default function BulkIndexPage() {
       icon={ListChecks}
       title="Bulk index checker"
       description={`Verify Google and Bing index coverage for up to ${MAX_URLS} URLs in one pass.`}
+      actions={
+        results.length ? (
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download className="size-3.5" /> Export CSV
+          </Button>
+        ) : undefined
+      }
     >
       <Card>
         <CardHeader>
@@ -97,6 +136,29 @@ export default function BulkIndexPage() {
             spellCheck={false}
             className="font-mono text-xs"
           />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bi-mode">Lookup source</Label>
+            <Select value={mode} onValueChange={(v) => setMode(v as typeof mode)}>
+              <SelectTrigger id="bi-mode" className="sm:max-w-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dataforseo-dual">
+                  Google + Bing — via DataForSEO
+                </SelectItem>
+                <SelectItem value="dataforseo">Google only — via DataForSEO</SelectItem>
+                <SelectItem value="google-api">
+                  Google only — via Programmable Search
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-foreground-muted">
+              {mode === 'google-api'
+                ? 'Needs a Google API key and Search Engine ID (CX) in Settings.'
+                : 'Needs DataForSEO credentials in Settings.'}
+            </span>
+          </div>
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1 flex items-center gap-3 max-w-sm">
               <Progress value={pct} className="flex-1" />

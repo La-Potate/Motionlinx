@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, Globe, Search, MapPin, Sparkles, HelpCircle } from 'lucide-react';
+import {
+  Download, Loader2, Globe, Search, MapPin, Sparkles, HelpCircle } from 'lucide-react';
 import aiSeoService from '@/shared/api/aiSeo';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -9,6 +10,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 import { stagger } from '@/shared/motion/presets';
 
 type Result = {
@@ -45,6 +47,20 @@ export default function AnswerAiPage() {
     }
   };
 
+  const exportCsv = () => {
+    const rows: any[] = (result as any)?.questions || (result as any)?.items || [];
+    if (!rows.length) return;
+    downloadCsv(
+      stampedName('answer-the-ai'),
+      ['question', 'covered', 'source'],
+      rows.map((r: any) => [
+        typeof r === 'string' ? r : (r.question ?? r.title ?? ''),
+        typeof r === 'string' ? '' : r.covered ? 'yes' : 'no',
+        typeof r === 'string' ? '' : (r.source ?? r.link ?? ''),
+      ])
+    );
+  };
+
   return (
     <ToolPage
       eyebrow="AI SEO"
@@ -52,6 +68,13 @@ export default function AnswerAiPage() {
       title="Answer the AI"
       description="See how people search around your keyword, who is surfacing, and what gaps to close on your landing page."
       twoColumn
+      actions={
+        Boolean(result) ? (
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download className="size-3.5" /> Export CSV
+          </Button>
+        ) : undefined
+      }
     >
       <Card>
         <CardHeader>
