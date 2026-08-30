@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, Copy, Check, MapPin, Map, Download } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Map, Download, Crosshair } from 'lucide-react';
+import { AddressSearch } from './components/AddressSearch';
+import { MapPreview, type PreviewMarker } from './components/MapPreview';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
@@ -27,7 +29,24 @@ const emptyLocation = (): Location => ({
   link: '',
 });
 
-function generateOSM(title: string, subtitle: string, locations: Location[], width: number, height: number) {
+/** Escape text before it is interpolated into generated HTML/JS. Names,
+ *  addresses and links are free text, and previously went in raw. */
+function esc(v: string) {
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function generateOSM(
+  title: string,
+  subtitle: string,
+  locations: Location[],
+  width: number,
+  height: number,
+  zoom: number
+) {
   const valid = locations.filter((l) => l.lat && l.lng);
   if (!valid.length) return '<!-- Add at least one location with coordinates -->';
   const centerLat =
@@ -36,32 +55,40 @@ function generateOSM(title: string, subtitle: string, locations: Location[], wid
     valid.reduce((s, l) => s + parseFloat(l.lng), 0) / valid.length;
   const markers = valid
     .map((loc, i) => {
+      const name = esc(loc.name || `Location ${i + 1}`);
+      const addr = loc.address ? `<br>${esc(loc.address)}` : '';
       const popup = loc.link
-        ? `<strong>${loc.name || `Location ${i + 1}`}</strong>${loc.address ? `<br>${loc.address}` : ''}<br><a href="${loc.link}" target="_blank">View Details</a>`
-        : `<strong>${loc.name || `Location ${i + 1}`}</strong>${loc.address ? `<br>${loc.address}` : ''}`;
+        ? `<strong>${name}</strong>${addr}<br><a href="${esc(loc.link)}" target="_blank" rel="noopener">View Details</a>`
+        : `<strong>${name}</strong>${addr}`;
       return `      L.marker([${loc.lat}, ${loc.lng}]).addTo(map).bindPopup('${popup.replace(/'/g, "\\'")}');`;
     })
     .join('\n');
   return `<div class="map-section">
-  ${title ? `<h2 class="map-title">${title}</h2>` : ''}
-  ${subtitle ? `<p class="map-subtitle">${subtitle}</p>` : ''}
+  ${title ? `<h2 class="map-title">${esc(title)}</h2>` : ''}
+  ${subtitle ? `<p class="map-subtitle">${esc(subtitle)}</p>` : ''}
   <div id="map" style="width: ${width}px; height: ${height}px; border-radius: 8px; overflow: hidden;"></div>
 </div>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  var map = L.map('map').setView([${centerLat.toFixed(6)}, ${centerLng.toFixed(6)}], ${valid.length === 1 ? 13 : 6});
+  var map = L.map('map').setView([${centerLat.toFixed(6)}, ${centerLng.toFixed(6)}], ${zoom});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
 ${markers}
 </script>`;
 }
 
-function generateIframe(title: string, subtitle: string, locations: Location[], width: number, height: number) {
+function generateIframe(
+  title: string,
+  subtitle: string,
+  locations: Location[],
+  width: number,
+  height: number
+) {
   const first = locations.find((l) => l.lat && l.lng);
   if (!first) return '<!-- Add at least one location with coordinates -->';
   return `<div class="map-section">
-  ${title ? `<h2>${title}</h2>` : ''}
-  ${subtitle ? `<p>${subtitle}</p>` : ''}
+  ${title ? `<h2>${esc(title)}</h2>` : ''}
+  ${subtitle ? `<p>${esc(subtitle)}</p>` : ''}
   <iframe
     src="https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(first.lng) - 0.05}%2C${parseFloat(first.lat) - 0.05}%2C${parseFloat(first.lng) + 0.05}%2C${parseFloat(first.lat) + 0.05}&layer=mapnik&marker=${first.lat}%2C${first.lng}"
     width="${width}" height="${height}" style="border:0; border-radius:8px;" loading="lazy"></iframe>
@@ -76,14 +103,37 @@ export default function MapElementPage() {
   const [mode, setMode] = useState<'osm-leaflet' | 'osm-iframe'>('osm-leaflet');
   const [locations, setLocations] = useState<Location[]>([emptyLocation()]);
   const [copied, setCopied] = useState(false);
+  // Driven by the preview map, so the snippet opens at whatever the user
+  // framed rather than a hardcoded guess.
+  const [zoom, setZoom] = useState(13);
 
   const output = useMemo(() => {
     const w = parseInt(width, 10) || 600;
     const h = parseInt(height, 10) || 450;
     return mode === 'osm-iframe'
       ? generateIframe(title, subtitle, locations, w, h)
-      : generateOSM(title, subtitle, locations, w, h);
-  }, [title, subtitle, locations, width, height, mode]);
+      : generateOSM(title, subtitle, locations, w, h, zoom);
+  }, [title, subtitle, locations, width, height, mode, zoom]);
+
+  /** Locations that have usable coordinates, shaped for the preview map. */
+  const previewMarkers: PreviewMarker[] = useMemo(
+    () =>
+      locations
+        .filter((l) => l.lat !== '' && l.lng !== '' && !Number.isNaN(Number(l.lat)) && !Number.isNaN(Number(l.lng)))
+        .map((l, i) => ({
+          id: l.id,
+          lat: Number(l.lat),
+          lng: Number(l.lng),
+          label: l.name || l.address || `Location ${i + 1}`,
+        })),
+    [locations]
+  );
+
+  /** Dragging a pin is just another way of editing the coordinate fields. */
+  const onMarkerMove = (id: string, lat: number, lng: number) =>
+    setLocations((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, lat: lat.toFixed(6), lng: lng.toFixed(6) } : l))
+    );
 
   const updateLoc = (i: number, patch: Partial<Location>) =>
     setLocations((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -202,32 +252,47 @@ export default function MapElementPage() {
                     </Button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-2">
                   <Input
                     placeholder="Name"
                     value={loc.name}
                     onChange={(e) => updateLoc(i, { name: e.target.value })}
                   />
-                  <Input
-                    placeholder="Address"
+
+                  {/* Search fills the coordinates, so nobody has to look them
+                      up by hand. Typing them directly still works. */}
+                  <AddressSearch
                     value={loc.address}
-                    onChange={(e) => updateLoc(i, { address: e.target.value })}
+                    onChange={(v) => updateLoc(i, { address: v })}
+                    onPick={(hit) =>
+                      updateLoc(i, {
+                        address: hit.displayName,
+                        lat: Number(hit.lat).toFixed(6),
+                        lng: Number(hit.lng).toFixed(6),
+                      })
+                    }
+                    placeholder="Search an address, or paste one"
                   />
-                  <Input
-                    placeholder="Latitude"
-                    value={loc.lat}
-                    onChange={(e) => updateLoc(i, { lat: e.target.value })}
-                  />
-                  <Input
-                    placeholder="Longitude"
-                    value={loc.lng}
-                    onChange={(e) => updateLoc(i, { lng: e.target.value })}
-                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Latitude"
+                      value={loc.lat}
+                      onChange={(e) => updateLoc(i, { lat: e.target.value })}
+                      className="font-mono text-xs"
+                    />
+                    <Input
+                      placeholder="Longitude"
+                      value={loc.lng}
+                      onChange={(e) => updateLoc(i, { lng: e.target.value })}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+
                   <Input
                     placeholder="Link (optional)"
                     value={loc.link}
                     onChange={(e) => updateLoc(i, { link: e.target.value })}
-                    className="col-span-2"
                   />
                 </div>
               </div>
@@ -254,24 +319,59 @@ export default function MapElementPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="code">
+          <Tabs defaultValue="preview">
             <TabsList>
-              <TabsTrigger value="code">Code</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="code">Code</TabsTrigger>
             </TabsList>
-            <TabsContent value="code">
-              <Textarea
-                value={output}
-                readOnly
-                className="font-mono text-xs h-80"
-              />
-            </TabsContent>
+
             <TabsContent value="preview">
-              <div
-                className="rounded-md border border-border bg-surface-muted overflow-hidden"
-                style={{ minHeight: 300 }}
-                dangerouslySetInnerHTML={{ __html: output }}
-              />
+              {previewMarkers.length === 0 ? (
+                <div className="flex h-[340px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border text-center">
+                  <Crosshair className="size-5 text-foreground-subtle" />
+                  <p className="text-sm text-foreground-muted max-w-xs">
+                    Search an address above and the map appears here. Drag the pin to
+                    fine-tune its position.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {/* Rendered with the real Leaflet build rather than injecting
+                      the generated markup: innerHTML never executes <script>,
+                      so the old preview showed nothing for this mode. */}
+                  <MapPreview
+                    markers={previewMarkers}
+                    zoom={zoom}
+                    onMove={onMarkerMove}
+                    onZoomChange={setZoom}
+                  />
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="map-zoom" className="shrink-0 text-xs">
+                      Zoom
+                    </Label>
+                    <input
+                      id="map-zoom"
+                      type="range"
+                      min={2}
+                      max={19}
+                      value={zoom}
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="h-1.5 flex-1 cursor-pointer accent-[var(--accent)]"
+                    />
+                    <span className="w-6 text-right font-mono text-xs tabular-nums text-foreground-muted">
+                      {zoom}
+                    </span>
+                  </div>
+                  <p className="text-xs text-foreground-muted">
+                    Drag a pin to move it — the coordinate fields update as you go.
+                    The zoom you set here is the zoom the embed opens at.
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="code">
+              <Textarea value={output} readOnly className="font-mono text-xs h-80" />
             </TabsContent>
           </Tabs>
         </CardContent>
