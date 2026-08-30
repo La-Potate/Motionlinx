@@ -121,7 +121,7 @@ export default function LoginPage({
           <div className="flex flex-col gap-6">
             <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-accent-pressed">
               <span className="size-1.5 rounded-full bg-accent" />
-              Production console
+              Production dashboard
             </span>
             <h1 className="text-[40px] font-semibold leading-[1.1] tracking-tight text-foreground">
               Operate your growth engine
@@ -211,7 +211,7 @@ export default function LoginPage({
                   )}
 
                   <Button type="submit" disabled={busy} size="lg" className="mt-2">
-                    {busy ? 'Signing in…' : 'Access console'}
+                    {busy ? 'Signing in…' : 'Sign in'}
                     <ArrowRight className="size-4" />
                   </Button>
 

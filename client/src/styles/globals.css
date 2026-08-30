@@ -331,3 +331,28 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Deep-linked settings field. A tool that needs a credential links straight
+   to its input (/settings?tab=apis&highlight=serperApiKey); this rings the
+   field briefly so the eye lands on it without the page jumping about. */
+.field-highlight {
+  animation: field-highlight-ring 2.6s ease-out 1;
+}
+
+@keyframes field-highlight-ring {
+  0%, 70% {
+    box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent);
+    background-color: var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent, 0 0 0 1px transparent;
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-highlight {
+    animation: none;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+}

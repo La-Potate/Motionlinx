@@ -7,11 +7,21 @@ import { ga4Service } from '@/shared/api/ga4';
 import { gscService } from '@/shared/api/gsc';
 import {
   ALL_TOOLS,
+  REQUIREMENT_SETUP,
   STANDALONE_APPS,
   TOOL_SECTIONS,
+  settingsLinkFor,
   toolsForSection,
+  type Accent,
   type ToolEntry,
 } from '@/app/nav-config';
+import {
+  accentBorderHover,
+  accentEdge,
+  accentText,
+  accentTile,
+  accentTileHover,
+} from '@/shared/lib/accent';
 import { stagger } from '@/shared/motion/presets';
 import { cn } from '@/shared/lib/cn';
 
@@ -108,15 +118,15 @@ export default function DashboardPage() {
         <StatTile
           label="Integrations"
           value={`${connectedCount}/2`}
-          hint={connectedCount === 2 ? 'Analytics + Search Console' : 'Connect in Settings'}
+          hint={connectedCount === 2 ? 'Analytics + Search Console' : 'Set up Google OAuth'}
           tone={connectedCount === 0 ? 'warn' : 'default'}
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate(settingsLinkFor('Search Console'))}
         />
         <StatTile
           label="Tools ready"
           value={`${readyCount}/${ALL_TOOLS.length}`}
-          hint="Rest need an API key"
-          onClick={() => navigate('/settings')}
+          hint={`${ALL_TOOLS.length - readyCount} need an API key`}
+          onClick={() => navigate('/settings?tab=apis')}
         />
       </section>
 
@@ -128,15 +138,12 @@ export default function DashboardPage() {
             const Icon = app.icon;
             const conn = app.id === 'ai-assistant' ? gsc : ga4;
             return (
-              <button
+              <div
                 key={app.id}
-                type="button"
-                onClick={() => navigate(app.path)}
                 className={cn(
                   'group flex flex-col gap-3 rounded-xl border border-border bg-surface p-5 text-left',
                   'transition-[border-color,box-shadow] duration-200',
-                  'hover:border-border-strong hover:shadow-elevation-md',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  'hover:border-border-strong hover:shadow-elevation-md'
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -170,11 +177,28 @@ export default function DashboardPage() {
                     {app.description}
                   </p>
                 </div>
-                <span className="mt-auto pt-1 inline-flex items-center gap-1.5 text-sm font-medium text-foreground group-hover:text-accent transition-colors">
-                  Open
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </span>
-              </button>
+                <div className="mt-auto flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => navigate(app.path)}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                  >
+                    Open
+                    <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                  {conn && !conn.connected && app.requires && (
+                    // Straight to the OAuth fields rather than Settings at large.
+                    <button
+                      type="button"
+                      onClick={() => navigate(settingsLinkFor(app.requires!))}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-foreground-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                    >
+                      <KeyRound className="size-3" />
+                      Set up {app.requires}
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -189,7 +213,12 @@ export default function DashboardPage() {
           <section key={section.id} className="flex flex-col gap-4">
             <div className="flex items-end justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
-                <span className="flex size-8 items-center justify-center rounded-lg bg-surface-muted text-foreground-muted shrink-0">
+                <span
+                  className={cn(
+                    'flex size-8 items-center justify-center rounded-lg shrink-0',
+                    accentTile(section.accent)
+                  )}
+                >
                   <SectionIcon className="size-4" strokeWidth={1.75} />
                 </span>
                 <div className="flex flex-col min-w-0">
@@ -217,7 +246,12 @@ export default function DashboardPage() {
             >
               {tools.map((tool) => (
                 <motion.div key={tool.id} variants={stagger.item}>
-                  <ToolRow tool={tool} onOpen={() => navigate(tool.path)} />
+                  <ToolRow
+                    tool={tool}
+                    accent={section.accent}
+                    onOpen={() => navigate(tool.path)}
+                    onSetup={(req) => navigate(settingsLinkFor(req))}
+                  />
                 </motion.div>
               ))}
             </motion.div>
@@ -281,41 +315,76 @@ function StatTile({
   );
 }
 
-function ToolRow({ tool, onOpen }: { tool: ToolEntry; onOpen: () => void }) {
+function ToolRow({
+  tool,
+  accent,
+  onOpen,
+  onSetup,
+}: {
+  tool: ToolEntry;
+  accent: Accent;
+  onOpen: () => void;
+  onSetup: (req: NonNullable<ToolEntry['requires']>) => void;
+}) {
   const Icon = tool.icon;
+  const setup = tool.requires ? REQUIREMENT_SETUP[tool.requires] : null;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={cn(
-        'group flex h-full w-full items-start gap-3 rounded-lg border border-border bg-surface p-3.5 text-left',
-        'transition-[border-color,box-shadow,background-color] duration-200',
-        'hover:border-border-strong hover:shadow-elevation-sm hover:bg-surface',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+        'group relative flex h-full overflow-hidden rounded-lg border border-border bg-surface',
+        'transition-[border-color,box-shadow] duration-200 hover:shadow-elevation-sm',
+        accentBorderHover(accent)
       )}
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-muted group-hover:bg-accent-soft group-hover:text-accent-pressed transition-colors">
-        <Icon className="size-4" strokeWidth={1.75} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground truncate">{tool.label}</span>
-          {tool.requires && (
-            <span
-              title={`Needs a ${tool.requires} key`}
-              className="shrink-0 rounded border border-border px-1 py-px text-[9px] font-medium uppercase tracking-wide text-foreground-subtle"
-            >
-              Key
-            </span>
-          )}
-        </span>
-        {tool.description && (
-          <span className="text-xs text-foreground-muted leading-snug line-clamp-2">
-            {tool.description}
+      {/* Section colour band — tells you at a glance which family a tool
+          belongs to when the grid is scanned rather than read. */}
+      <span
+        aria-hidden
+        className={cn('w-[3px] shrink-0', accentEdge(accent))}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3.5">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+        >
+          <span
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-muted transition-colors',
+              accentTileHover(accent)
+            )}
+          >
+            <Icon className="size-4" strokeWidth={1.75} />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">{tool.label}</span>
+            {tool.description && (
+              <span className="text-xs text-foreground-muted leading-snug line-clamp-2">
+                {tool.description}
+              </span>
+            )}
+          </span>
+          <ArrowUpRight className="mt-1 size-3.5 shrink-0 text-foreground-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+        </button>
+
+        {setup ? (
+          // Sends you to the exact field rather than the Settings landing.
+          <button
+            type="button"
+            onClick={() => onSetup(tool.requires!)}
+            title={`Add ${setup.what} in Settings`}
+            className="inline-flex w-fit items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-foreground-subtle transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <KeyRound className="size-2.5" />
+            Needs {tool.requires}
+          </button>
+        ) : (
+          <span className={cn('inline-flex w-fit items-center gap-1 text-[10px] font-medium', accentText(accent))}>
+            <Check className="size-2.5" strokeWidth={3} />
+            Ready to use
           </span>
         )}
-      </span>
-      <ArrowUpRight className="size-3.5 shrink-0 text-foreground-subtle opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
-    </button>
+      </div>
+    </div>
   );
 }

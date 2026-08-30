@@ -290,7 +290,7 @@ export default function AdminPage() {
   return (
     <ToolPage
       eyebrow="Admin"
-      title="Operations console"
+      title="Admin"
       description="Users, banned IPs, activity, and global statistics."
       actions={
         <Button

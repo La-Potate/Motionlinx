@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { differenceInCalendarDays, format, subDays } from 'date-fns';
 import { BarChart3, Link as LinkIcon, RefreshCw, Settings as SettingsIcon, Unlink } from 'lucide-react';
+import { settingsLinkFor } from '@/app/nav-config';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { Card } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
@@ -230,7 +231,7 @@ export default function AiTrafficReportPage() {
               An admin needs to add the Google OAuth Client ID + Secret in{' '}
               <button
                 type="button"
-                onClick={() => navigate('/settings')}
+                onClick={() => navigate(settingsLinkFor('Google Analytics'))}
                 className="text-accent hover:underline"
               >
                 Settings → API keys
@@ -239,8 +240,8 @@ export default function AiTrafficReportPage() {
             </p>
           </div>
           <div>
-            <Button onClick={() => navigate('/settings')}>
-              <SettingsIcon className="size-4" /> Open Settings
+            <Button onClick={() => navigate(settingsLinkFor('Google Analytics'))}>
+              <SettingsIcon className="size-4" /> Add OAuth credentials
             </Button>
           </div>
         </Card>

@@ -8,6 +8,7 @@ import {
   Sparkles,
   Unlink,
 } from 'lucide-react';
+import { settingsLinkFor } from '@/app/nav-config';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { Card } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
@@ -240,7 +241,7 @@ export default function AiAssistantPage() {
             An admin needs to add the Google OAuth Client ID + Secret in{' '}
             <button
               type="button"
-              onClick={() => navigate('/settings')}
+              onClick={() => navigate(settingsLinkFor('Search Console'))}
               className="text-accent hover:underline"
             >
               Settings → API keys
@@ -252,8 +253,8 @@ export default function AiAssistantPage() {
             as an authorized redirect URI in Google Cloud Console.
           </p>
           <div>
-            <Button onClick={() => navigate('/settings')}>
-              <SettingsIcon className="size-4" /> Open Settings
+            <Button onClick={() => navigate(settingsLinkFor('Search Console'))}>
+              <SettingsIcon className="size-4" /> Add OAuth credentials
             </Button>
           </div>
         </Card>

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { KeyHint } from '@/shared/components/KeyHint';
-import { BreadcrumbNav } from './BreadcrumbNav';
 import { PrimaryNav } from './PrimaryNav';
 import { CreditsWidget } from './CreditsWidget';
 import { UserMenu } from './UserMenu';
@@ -47,20 +46,16 @@ export function TopBar({ onOpenCommand }: Props) {
           gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         }}
       >
-        {/* LEFT — logo + breadcrumb */}
+        {/* LEFT — logo */}
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/')}
             className="flex items-center rounded-md px-1 -mx-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-80"
-            aria-label="Go to dashboard"
+            aria-label="Motionlinx home"
           >
             <Wordmark size="md" />
           </button>
-          <span className="hidden lg:block h-5 w-px bg-border" />
-          <div className="hidden lg:block min-w-0 flex-1">
-            <BreadcrumbNav />
-          </div>
         </div>
 
         {/* CENTER — primary nav, position-stable */}

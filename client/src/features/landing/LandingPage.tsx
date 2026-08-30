@@ -58,7 +58,7 @@ export default function LandingPage() {
             hub="web"
             eyebrow="Web Search"
             title="SERP intelligence at the speed of paste."
-            description="Inspect technical health, generate schema, fan out bulk checks, and turn a sitemap into a navigable tree without leaving the console."
+            description="Inspect technical health, generate schema, fan out bulk checks, and turn a sitemap into a navigable tree without leaving the dashboard."
             tools={[
               'Schema Generator (12+ types)',
               'Technical Audit',

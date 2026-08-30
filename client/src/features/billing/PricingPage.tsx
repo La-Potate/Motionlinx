@@ -119,7 +119,7 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Slim header with back navigation. Trial users can't go back to the
-         SEO Toolkit console (they get redirected), so we route them to logout instead. */}
+         dashboard (they get redirected), so we route them to logout instead. */}
       <motion.header
         initial={{ y: -8, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -135,7 +135,7 @@ export default function PricingPage() {
               className="gap-1.5 -ml-2"
             >
               <ArrowLeft className="size-4" />
-              <span>{isTrial ? 'Back to trial' : 'Back to console'}</span>
+              <span>{isTrial ? 'Back to trial' : 'Back to dashboard'}</span>
             </Button>
           </motion.div>
           <Wordmark size="sm" />

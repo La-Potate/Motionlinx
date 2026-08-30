@@ -15,6 +15,7 @@ import {
   Link as LinkIcon,
   Unlink,
   LineChart,
+  ShieldAlert,
 } from 'lucide-react';
 import { userService } from '@/shared/api/user';
 import authenticatedFetch from '@/shared/api/httpClient';
@@ -29,6 +30,7 @@ import { Label } from '@/shared/ui/label';
 import { Textarea } from '@/shared/ui/textarea';
 import { Badge } from '@/shared/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui/tabs';
+import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
 import { cn } from '@/shared/lib/cn';
@@ -54,6 +56,56 @@ function getUserFromToken(): CurrentUser | null {
 
 export default function SettingsPage() {
   const user = getUserFromToken();
+
+  // Deep-link support: /settings?tab=apis&highlight=serperApiKey opens the
+  // right tab AND scrolls to the exact field. Tools link here directly so
+  // "you need a key" resolves to the one input instead of dropping someone
+  // on this page to hunt for it.
+  //
+  // These hooks sit above the `!user` early return — React requires an
+  // unconditional call order.
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const highlight = searchParams.get('highlight');
+  const [tab, setTab] = useState(requestedTab || 'profile');
+
+  // 'apis' and 'prompts' only exist for admins. A non-admin following a
+  // "set it up" link would otherwise land on an empty panel, so fall back to
+  // Profile and tell them who can actually add the key.
+  const ADMIN_ONLY_TABS = ['apis', 'prompts'];
+  const isAdminUser = user?.role === 'admin';
+  const blockedTab = Boolean(
+    requestedTab && ADMIN_ONLY_TABS.includes(requestedTab) && !isAdminUser,
+  );
+
+  useEffect(() => {
+    if (requestedTab) setTab(blockedTab ? 'profile' : requestedTab);
+  }, [requestedTab, blockedTab]);
+
+  useEffect(() => {
+    if (!highlight || blockedTab) return;
+    // Radix unmounts inactive tab panels, so wait a frame for the target
+    // tab's content to mount before looking the field up.
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const el = document.getElementById(highlight);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Focus so a keyboard user lands on the field too, not just the eye.
+      if (typeof (el as HTMLInputElement).focus === 'function') {
+        (el as HTMLInputElement).focus({ preventScroll: true });
+      }
+      const wrapper = el.closest('[data-field]') || el;
+      wrapper.classList.add('field-highlight');
+      window.setTimeout(() => wrapper.classList.remove('field-highlight'), 2600);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [highlight, tab, blockedTab]);
+
   if (!user) {
     return (
       <ToolPage title="Settings" eyebrow="Account">
@@ -85,7 +137,23 @@ export default function SettingsPage() {
         <Stat label="Role" value={user.role || 'personal'} />
       </div>
 
-      <Tabs defaultValue="profile">
+      {blockedTab && (
+        <div className="flex items-start gap-3 rounded-lg border border-butter bg-butter/25 p-4">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-butter-ink" />
+          <div className="flex flex-col gap-0.5">
+            <p className="text-sm font-medium text-foreground">
+              That setting is managed by an admin
+            </p>
+            <p className="text-sm text-foreground-muted">
+              Shared API keys apply to everyone on this workspace, so only an admin
+              can change them. Ask an admin to add it and the tool will start working
+              for you — no change needed on your account.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
@@ -455,7 +523,7 @@ function ApiKeysCard() {
             onChange={(v) => setKeys((k) => ({ ...k, googleApiKey: v }))}
             help="Used for Google Search API and other Google services."
             externalLink={{
-              label: 'Console',
+              label: 'Google Cloud',
               href: 'https://console.cloud.google.com/apis/credentials',
             }}
             disabled={!isAdmin}
@@ -547,7 +615,7 @@ function ApiKeysCard() {
                 value={keys.googleOauthClientId}
                 onChange={(v) => setKeys((k) => ({ ...k, googleOauthClientId: v }))}
                 externalLink={{
-                  label: 'Console',
+                  label: 'Google Cloud',
                   href: 'https://console.cloud.google.com/apis/credentials',
                 }}
                 disabled={!isAdmin}
@@ -820,7 +888,9 @@ function KeyField({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    // data-field is the anchor the ?highlight= deep link rings — set on the
+    // wrapper so the label and helper text light up with the input.
+    <div data-field={id} className="flex flex-col gap-1.5 rounded-lg">
       <div className="flex items-baseline justify-between">
         <Label htmlFor={id} className="flex items-center gap-1.5">
           <Key className="size-3.5 text-foreground-subtle" />

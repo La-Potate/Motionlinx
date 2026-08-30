@@ -45,7 +45,7 @@ export function Hero() {
               <span className="absolute inline-flex size-full rounded-full bg-accent opacity-60 animate-ping" />
               <span className="relative inline-flex size-1.5 rounded-full bg-accent" />
             </span>
-            Production console · v0.6
+            Production dashboard · v0.6
           </motion.div>
 
           <h1 className="text-[44px] sm:text-[60px] lg:text-[72px] font-semibold leading-[1.05] tracking-[-0.02em] text-foreground">
@@ -85,7 +85,7 @@ export function Hero() {
             className="max-w-xl text-[17px] leading-relaxed text-foreground-muted"
           >
             Research, local SEO, SERP intelligence, schema automation and
-            content generation in one credit-metered console — with a clear
+            content generation in one credit-metered dashboard — with a clear
             audit trail for every run.
           </motion.p>
 

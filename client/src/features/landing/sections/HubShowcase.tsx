@@ -76,7 +76,7 @@ export function HubShowcase({
             </ul>
             <div className="pt-2">
               <Button variant="outline" className="gap-1.5">
-                Explore in console
+                Explore in dashboard
                 <ArrowRight className="size-3.5" />
               </Button>
             </div>
