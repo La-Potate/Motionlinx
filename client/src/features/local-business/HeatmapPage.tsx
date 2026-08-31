@@ -27,6 +27,8 @@ import {
   DialogTitle,
 } from '@/shared/ui/dialog';
 import { toast } from '@/shared/ui/sonner';
+import { AddressSearch } from '@/features/web-search/components/AddressSearch';
+import { parsePlaceInput, parseLatLngFromMapsUrl } from '@/shared/lib/placeId';
 import { cn } from '@/shared/lib/cn';
 
 export default function HeatmapPage() {
@@ -35,11 +37,17 @@ export default function HeatmapPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  // These mirror the API contract. The old form collected `radius` and `grid`
+  // and no placeId/lat/lng at all, so every create returned 400.
   const [form, setForm] = useState({
     name: '',
     keyword: '',
     address: '',
-    radius: '5',
+    business: '',
+    placeId: '',
+    lat: '',
+    lng: '',
+    radiusMiles: '3',
     grid: '5',
   });
 
@@ -60,23 +68,50 @@ export default function HeatmapPage() {
   }, [refresh]);
 
   const onCreate = async () => {
-    if (!form.name.trim() || !form.keyword.trim() || !form.address.trim()) {
-      toast.error('Name, keyword and address are required.');
+    if (!form.name.trim() || !form.keyword.trim()) {
+      toast.error('Report name and keyword are required.');
+      return;
+    }
+    if (!form.placeId.trim()) {
+      toast.error('Paste the business’s Google Maps link so we can identify it.');
+      return;
+    }
+    if (!form.lat || !form.lng) {
+      toast.error('Set the map centre — search the address or paste a Maps link.');
       return;
     }
     setBusy(true);
     try {
+      const miles = parseFloat(form.radiusMiles) || 3;
+      const grid = Math.max(parseInt(form.grid, 10) || 5, 2);
+      const radiusMeters = Math.round(miles * 1609.34);
       const payload = {
         name: form.name.trim(),
         keyword: form.keyword.trim(),
         address: form.address.trim(),
-        radius: parseFloat(form.radius) || 5,
-        grid: parseInt(form.grid, 10) || 5,
+        placeId: form.placeId.trim(),
+        lat: Number(form.lat),
+        lng: Number(form.lng),
+        gridSize: grid,
+        radiusMeters,
+        // Spacing between cells: spread the grid evenly across the diameter,
+        // so a wider radius does not silently sample the same tight cluster.
+        stepMeters: Math.max(Math.round((radiusMeters * 2) / Math.max(grid - 1, 1)), 50),
       };
       const data: any = await heatmapService.createReport(payload);
       toast.success('Report created');
       setShowCreate(false);
-      setForm({ name: '', keyword: '', address: '', radius: '5', grid: '5' });
+      setForm({
+        name: '',
+        keyword: '',
+        address: '',
+        business: '',
+        placeId: '',
+        lat: '',
+        lng: '',
+        radiusMiles: '3',
+        grid: '5',
+      });
       refresh();
       if (data?.id) setSelected(data);
     } catch (err: any) {
@@ -278,28 +313,85 @@ export default function HeatmapPage() {
                 id="h-kw"
                 value={form.keyword}
                 onChange={(e) => setForm({ ...form, keyword: e.target.value })}
+                placeholder="plumber near me"
               />
             </FieldRow>
-            <FieldRow id="h-addr" label="Center address" className="sm:col-span-2">
+
+            {/* The business being ranked. Parsed locally, so setting up a
+                report needs no Google key — only generating the grid does. */}
+            <FieldRow
+              id="h-biz"
+              label="Business — Google Maps link or place ID"
+              className="sm:col-span-2"
+            >
               <Input
+                id="h-biz"
+                value={form.business}
+                onChange={(e) => {
+                  const business = e.target.value;
+                  const parsed = parsePlaceInput(business);
+                  const coords = parseLatLngFromMapsUrl(business);
+                  setForm((f) => ({
+                    ...f,
+                    business,
+                    placeId: parsed.placeId,
+                    // A pasted Maps URL usually carries the coordinates too.
+                    lat: coords ? String(coords.lat) : f.lat,
+                    lng: coords ? String(coords.lng) : f.lng,
+                  }));
+                }}
+                placeholder="https://www.google.com/maps/place/… or ChIJ…"
+              />
+              <span className="text-xs text-foreground-muted">
+                {form.placeId ? (
+                  <span className="text-mint-ink">Place ID found: {form.placeId}</span>
+                ) : form.business ? (
+                  'No place ID in that link yet — open the business in Google Maps and copy the URL from the address bar.'
+                ) : (
+                  'Identifies which business to track across the grid.'
+                )}
+              </span>
+            </FieldRow>
+
+            {/* Centre of the grid. Uses the keyless geocode endpoint. */}
+            <FieldRow id="h-addr" label="Grid centre" className="sm:col-span-2">
+              <AddressSearch
                 id="h-addr"
                 value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                placeholder="123 Main St, Austin, TX"
+                onChange={(v) => setForm((f) => ({ ...f, address: v }))}
+                onPick={(hit) =>
+                  setForm((f) => ({
+                    ...f,
+                    address: hit.displayName,
+                    lat: Number(hit.lat).toFixed(6),
+                    lng: Number(hit.lng).toFixed(6),
+                  }))
+                }
+                placeholder="Search the business address"
               />
+              <span className="text-xs text-foreground-muted">
+                {form.lat && form.lng
+                  ? `Centre set: ${Number(form.lat).toFixed(5)}, ${Number(form.lng).toFixed(5)}`
+                  : 'Search an address, or paste a Maps link above to fill this automatically.'}
+              </span>
             </FieldRow>
-            <FieldRow id="h-radius" label="Radius (mi)">
+
+            <FieldRow id="h-radius" label="Radius (miles)">
               <Input
                 id="h-radius"
                 type="number"
-                value={form.radius}
-                onChange={(e) => setForm({ ...form, radius: e.target.value })}
+                min="0.1"
+                step="0.1"
+                value={form.radiusMiles}
+                onChange={(e) => setForm({ ...form, radiusMiles: e.target.value })}
               />
             </FieldRow>
             <FieldRow id="h-grid" label="Grid size (cells per side)">
               <Input
                 id="h-grid"
                 type="number"
+                min="2"
+                max="15"
                 value={form.grid}
                 onChange={(e) => setForm({ ...form, grid: e.target.value })}
               />

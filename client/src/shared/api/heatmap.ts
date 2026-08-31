@@ -5,20 +5,33 @@ const authHeaders = () => ({
   'Authorization': `Bearer ${localStorage.getItem('token')}`
 });
 
+/** Pull the server's error message out of a failed response. */
+async function errorFrom(r, fallback) {
+  try {
+    const body = await r.json();
+    return body?.error || body?.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export const heatmapService = {
   async listReports() {
     const r = await fetch(`${API}/reports`, { headers: authHeaders() });
-    if (!r.ok) throw new Error('Failed to list reports');
+    if (!r.ok) throw new Error(await errorFrom(r, 'Failed to list reports'));
     return await r.json();
   },
   async createReport(payload) {
     const r = await fetch(`${API}/reports`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
-    if (!r.ok) throw new Error('Failed to create report');
+    // Surface what the server actually said. This used to throw a fixed
+    // string, which is why a payload mismatch presented as an unexplained
+    // "Failed to create report" rather than "Missing required fields".
+    if (!r.ok) throw new Error(await errorFrom(r, 'Failed to create report'));
     return await r.json();
   },
   async generateReport(id) {
     const r = await fetch(`${API}/reports/${id}/generate`, { method: 'POST', headers: authHeaders() });
-    if (!r.ok) throw new Error('Failed to generate snapshot');
+    if (!r.ok) throw new Error(await errorFrom(r, 'Failed to generate snapshot'));
     return await r.json();
   },
   async deleteReport(id) {
