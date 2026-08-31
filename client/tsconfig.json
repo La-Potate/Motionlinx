@@ -20,9 +20,8 @@
     "useDefineForClassFields": true,
     "verbatimModuleSyntax": false,
     "types": ["vite/client", "node"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "vite.config.js"],
