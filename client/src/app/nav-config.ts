@@ -255,12 +255,12 @@ export const ALL_TOOLS: ToolEntry[] = [
     path: '/web-search/technical-audit',
     icon: ShieldAlert,
     section: 'Web Search',
-    description: 'Site-wide technical issue report.',
-    keywords: ['audit', 'issues', 'technical'],
+    description: 'Crawl a site and report response, redirect and metadata problems.',
+    keywords: ['audit', 'issues', 'technical', 'broken', 'redirect'],
     whatItDoes: [
-      'Group technical issues by severity',
-      'Track issue counts across a site',
-      'Export the findings',
+      'Find pages from the sitemap, or by crawling when there is none',
+      'Flag error responses, redirect chains and slow pages',
+      'Report missing or duplicate titles and meta descriptions',
     ],
   },
   {

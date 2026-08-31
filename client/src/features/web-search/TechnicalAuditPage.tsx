@@ -1,21 +1,24 @@
-import { useMemo, useState } from 'react';
-import { Plus, BarChart2, Globe, ChevronUp, ChevronDown, AlertCircle, AlertTriangle, Info, Download, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ShieldAlert,
+  Globe,
+  Loader2,
+  Download,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  ChevronDown,
+  ChevronRight,
+  Check,
+} from 'lucide-react';
 import { ToolPage } from '@/shared/components/ToolPage';
+import { EmptyState } from '@/shared/components/EmptyState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 import { Badge } from '@/shared/ui/badge';
 import { Progress } from '@/shared/ui/progress';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/shared/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -23,398 +26,281 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/shared/ui/table';
+import { toast } from '@/shared/ui/sonner';
+import { downloadCsv, stampedName } from '@/shared/lib/exportCsv';
 import { cn } from '@/shared/lib/cn';
+import {
+  runTechnicalAudit,
+  type AuditResult,
+  type Finding,
+  type Progress as Prog,
+  type Severity,
+} from './lib/runTechnicalAudit';
 
-const MOCK_PROJECTS = [
-  {
-    id: 'proj-1',
-    name: 'Valyoufurniture',
-    url: 'valyoufurniture.com',
-    lastCrawl: '23 Nov 06:38 PM',
-    status: 'Completed',
-    health: 86,
-    healthDelta: -2,
-    crawled: 1057,
-    errors: 1039,
-    plan: 'Basic',
-  },
-  {
-    id: 'proj-2',
-    name: 'Notionhive',
-    url: 'notionhive.ca',
-    lastCrawl: '24 Nov 02:27 PM',
-    status: 'Completed',
-    health: 99,
-    healthDelta: 2,
-    crawled: 26,
-    errors: 1,
-    plan: 'Basic',
-  },
-  {
-    id: 'proj-3',
-    name: 'AlphaTradingIntl',
-    url: 'alphatradingintl.com',
-    lastCrawl: '9 Nov 08:05 PM',
-    status: 'Completed',
-    health: 99,
-    healthDelta: 0,
-    crawled: 1753,
-    errors: 13,
-    plan: 'Basic',
-  },
-];
-
-const MOCK_OVERVIEW = {
-  health: 86,
-  issues: { errors: 1257, warnings: 2888, notices: 1732 },
-  topIssues: [
-    { sev: 'error', title: '404 page', crawled: 139, change: '+2' },
-    { sev: 'warning', title: 'Missing alt text', crawled: 909, change: '+7' },
-    { sev: 'notice', title: 'Indexable page became non-indexable', crawled: 1, change: '+1' },
-  ],
+const SEVERITY: Record<Severity, { label: string; icon: typeof AlertCircle; cls: string }> = {
+  critical: { label: 'Critical', icon: AlertCircle, cls: 'text-rose-ink' },
+  warning: { label: 'Warning', icon: AlertTriangle, cls: 'text-butter-ink' },
+  notice: { label: 'Notice', icon: Info, cls: 'text-sky-ink' },
 };
 
-const MOCK_GROUPS = [
-  {
-    label: 'Internal pages',
-    items: [
-      { sev: 'error', title: '404 page', crawled: 139, change: '+2' },
-      { sev: 'error', title: '4XX page', crawled: 139, change: '+2' },
-    ],
-  },
-  {
-    label: 'Indexability',
-    items: [
-      { sev: 'warning', title: 'Noindex page', crawled: 2, change: '0' },
-      { sev: 'notice', title: 'Indexable page became non-indexable', crawled: 1, change: '+1' },
-    ],
-  },
-  {
-    label: 'Links',
-    items: [
-      { sev: 'warning', title: 'Page has links to broken page', crawled: 587, change: '+2' },
-      { sev: 'warning', title: 'Orphan page (no internal links)', crawled: 25, change: '0' },
-    ],
-  },
-];
-
-function healthTone(score: number) {
-  if (score >= 95) return 'mint' as const;
-  if (score >= 80) return 'butter' as const;
-  return 'rose' as const;
-}
-
-function SevIcon({ sev }: { sev: string }) {
-  if (sev === 'error') return <AlertCircle className="size-3.5 text-rose-ink" />;
-  if (sev === 'warning') return <AlertTriangle className="size-3.5 text-butter-ink" />;
-  return <Info className="size-3.5 text-sky-ink" />;
-}
-
 export default function TechnicalAuditPage() {
-  const [selectedId, setSelectedId] = useState(MOCK_PROJECTS[0].id);
-  const [creating, setCreating] = useState(false);
-  const selected = useMemo(() => MOCK_PROJECTS.find((p) => p.id === selectedId), [selectedId]);
+  const [target, setTarget] = useState('');
+  const [limit, setLimit] = useState('50');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<Prog | null>(null);
+  const [result, setResult] = useState<AuditResult | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const onRun = async () => {
+    if (!target.trim()) {
+      toast.error('Enter a domain or URL.');
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    setProgress({ step: 'Starting', done: 0, total: 1 });
+    try {
+      const data = await runTechnicalAudit(target.trim(), parseInt(limit, 10) || 50, setProgress);
+      setResult(data);
+      setOpen(new Set(data.findings.filter((f) => f.severity === 'critical').map((f) => f.id)));
+      toast.success(`Audited ${data.audited} page${data.audited === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Audit failed');
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  };
+
+  const exportCsv = () => {
+    if (!result) return;
+    downloadCsv(
+      stampedName('technical-audit'),
+      ['url', 'status', 'redirected', 'hops', 'final_url', 'title', 'description', 'time_ms'],
+      result.pages.map((p) => [
+        p.url,
+        p.status ?? '',
+        p.redirected ? 'yes' : 'no',
+        p.hops,
+        p.finalUrl,
+        p.title,
+        p.description,
+        p.timeMs ?? '',
+      ])
+    );
+  };
+
+  const counts = (sev: Severity) =>
+    result?.findings.filter((f) => f.severity === sev).reduce((n, f) => n + f.urls.length, 0) ?? 0;
 
   return (
     <ToolPage
       eyebrow="Web Search"
       icon={ShieldAlert}
       title="Technical audit"
-      description="Crawl-driven site health, issue tracking, and indexability inspection."
+      description="Crawls a site and reports real response, redirect and metadata problems across its pages."
       actions={
-        <>
-          <Badge variant="butter">Demo data</Badge>
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New project
+        result ? (
+          <Button variant="outline" size="sm" onClick={exportCsv}>
+            <Download className="size-3.5" /> Export CSV
           </Button>
-        </>
+        ) : undefined
       }
     >
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Project</TableHead>
-              <TableHead>Last crawl</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Health</TableHead>
-              <TableHead className="text-right">URLs crawled</TableHead>
-              <TableHead className="text-right">Errors</TableHead>
-              <TableHead>Plan</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {MOCK_PROJECTS.map((p) => {
-              const tone = healthTone(p.health);
-              return (
-                <TableRow
-                  key={p.id}
-                  data-state={p.id === selectedId ? 'selected' : undefined}
-                  className="cursor-pointer"
-                  onClick={() => setSelectedId(p.id)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      <span className="size-7 rounded-md bg-surface-muted flex items-center justify-center">
-                        <Globe className="size-3.5 text-foreground-subtle" />
-                      </span>
-                      <div>
-                        <div className="font-medium text-sm">{p.name}</div>
-                        <div className="text-xs text-foreground-subtle">{p.url}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs text-foreground-muted">{p.lastCrawl}</TableCell>
-                  <TableCell>
-                    <Badge variant="mint">{p.status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={tone}>{p.health}%</Badge>
-                      {p.healthDelta !== 0 && (
-                        <span
-                          className={cn(
-                            'text-[11px] flex items-center gap-0.5',
-                            p.healthDelta > 0 ? 'text-mint-ink' : 'text-rose-ink'
-                          )}
-                        >
-                          {p.healthDelta > 0 ? (
-                            <ChevronUp className="size-3" />
-                          ) : (
-                            <ChevronDown className="size-3" />
-                          )}
-                          {Math.abs(p.healthDelta)}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
-                    {p.crawled.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
-                    {p.errors.toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{p.plan}</Badge>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
-
-      {selected && (
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="issues">All issues</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center justify-between">
-                    Health score <BarChart2 className="size-3.5 text-foreground-subtle" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center gap-3 py-6">
-                  <div
-                    className={cn(
-                      'flex size-24 items-center justify-center rounded-full text-3xl font-semibold tabular-nums',
-                      healthTone(MOCK_OVERVIEW.health) === 'mint' && 'bg-mint text-mint-ink',
-                      healthTone(MOCK_OVERVIEW.health) === 'butter' && 'bg-butter text-butter-ink',
-                      healthTone(MOCK_OVERVIEW.health) === 'rose' && 'bg-rose text-rose-ink'
-                    )}
-                  >
-                    {MOCK_OVERVIEW.health}
-                  </div>
-                  <Badge variant={healthTone(MOCK_OVERVIEW.health)}>Good</Badge>
-                </CardContent>
-              </Card>
-
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle className="text-sm">Issues distribution</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3">
-                  <BarRow
-                    label="Errors"
-                    count={MOCK_OVERVIEW.issues.errors}
-                    pct={60}
-                    tone="rose"
-                  />
-                  <BarRow
-                    label="Warnings"
-                    count={MOCK_OVERVIEW.issues.warnings}
-                    pct={80}
-                    tone="butter"
-                  />
-                  <BarRow
-                    label="Notices"
-                    count={MOCK_OVERVIEW.issues.notices}
-                    pct={40}
-                    tone="sky"
-                  />
-                </CardContent>
-              </Card>
-
-              <Card className="lg:col-span-3">
-                <CardHeader>
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <CardTitle className="text-sm">Top issues</CardTitle>
-                    <Button variant="outline" size="sm">
-                      <Download className="size-3.5" /> Export
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Issue</TableHead>
-                        <TableHead className="text-right">Crawled</TableHead>
-                        <TableHead className="text-right">Change</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {MOCK_OVERVIEW.topIssues.map((it, i) => (
-                        <TableRow key={i}>
-                          <TableCell>
-                            <span className="flex items-center gap-2 text-sm">
-                              <SevIcon sev={it.sev} />
-                              {it.title}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">{it.crawled}</TableCell>
-                          <TableCell className="text-right tabular-nums text-foreground-muted">
-                            {it.change}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="ta-domain">Domain or URL</Label>
+              <div className="relative">
+                <Globe className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-foreground-subtle" />
+                <Input
+                  id="ta-domain"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="example.com"
+                  className="pl-8"
+                />
+              </div>
             </div>
-          </TabsContent>
-
-          <TabsContent value="issues">
-            <div className="flex flex-col gap-4">
-              {MOCK_GROUPS.map((g) => (
-                <Card key={g.label}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">{g.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Issue</TableHead>
-                          <TableHead className="text-right">Crawled</TableHead>
-                          <TableHead className="text-right">Change</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {g.items.map((it, i) => (
-                          <TableRow key={i}>
-                            <TableCell>
-                              <span className="flex items-center gap-2 text-sm">
-                                <SevIcon sev={it.sev} />
-                                {it.title}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">{it.crawled}</TableCell>
-                            <TableCell className="text-right tabular-nums text-foreground-muted">
-                              {it.change}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
-      )}
-
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New audit project</DialogTitle>
-            <DialogDescription>
-              Define the domain and crawl ceiling. Live crawl scheduling is in development.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ta-domain">Domain</Label>
-              <Input id="ta-domain" placeholder="https://example.com" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Crawl limit</Label>
-              <Select defaultValue="1000">
-                <SelectTrigger>
+            <div className="flex flex-col gap-1.5 sm:w-44">
+              <Label htmlFor="ta-limit">Pages to audit</Label>
+              <Select value={limit} onValueChange={setLimit}>
+                <SelectTrigger id="ta-limit">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="25">25 pages</SelectItem>
+                  <SelectItem value="50">50 pages</SelectItem>
                   <SelectItem value="100">100 pages</SelectItem>
-                  <SelectItem value="500">500 pages</SelectItem>
-                  <SelectItem value="1000">1,000 pages</SelectItem>
-                  <SelectItem value="5000">5,000 pages</SelectItem>
+                  <SelectItem value="200">200 pages</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreating(false)}>
-              Cancel
+            <Button size="lg" onClick={onRun} disabled={busy}>
+              {busy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Auditing…
+                </>
+              ) : (
+                <>
+                  <ShieldAlert className="size-4" /> Run audit
+                </>
+              )}
             </Button>
-            <Button onClick={() => setCreating(false)}>Start crawl</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+
+          {progress && (
+            <div className="mt-4 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-xs text-foreground-muted">
+                <span>{progress.step}…</span>
+                {progress.total > 1 && (
+                  <span className="tabular-nums">
+                    {progress.done}/{progress.total}
+                  </span>
+                )}
+              </div>
+              <Progress
+                value={progress.total ? (progress.done / progress.total) * 100 : 15}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {!result ? (
+        !busy && (
+          <EmptyState
+            icon={ShieldAlert}
+            title="No audit yet"
+            description="Enter a domain. Pages are found from the sitemap, or by crawling if there is none, then checked for response errors, redirect chains and metadata problems."
+          />
+        )
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Health score" value={String(result.score)} tone={result.score >= 80 ? 'good' : result.score >= 50 ? 'warn' : 'bad'} />
+            <Stat label="Pages audited" value={`${result.audited}`} hint={`of ${result.discovered} found via ${result.source}`} />
+            <Stat label="Critical" value={String(counts('critical'))} tone={counts('critical') ? 'bad' : 'good'} />
+            <Stat label="Warnings" value={String(counts('warning'))} tone={counts('warning') ? 'warn' : 'good'} />
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Findings</CardTitle>
+              <p className="text-sm text-foreground-muted">
+                Every item below comes from an actual response for one of the audited
+                pages.
+              </p>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {result.findings.length === 0 ? (
+                <div className="flex items-center gap-2 text-sm text-mint-ink">
+                  <Check className="size-4" /> Nothing flagged across {result.audited} pages.
+                </div>
+              ) : (
+                result.findings.map((f) => (
+                  <FindingRow
+                    key={f.id}
+                    finding={f}
+                    open={open.has(f.id)}
+                    onToggle={() =>
+                      setOpen((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(f.id)) next.delete(f.id);
+                        else next.add(f.id);
+                        return next;
+                      })
+                    }
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </ToolPage>
   );
 }
 
-function BarRow({
+function Stat({
   label,
-  count,
-  pct,
-  tone,
+  value,
+  hint,
+  tone = 'default',
 }: {
   label: string;
-  count: number;
-  pct: number;
-  tone: 'rose' | 'butter' | 'sky';
+  value: string;
+  hint?: string;
+  tone?: 'default' | 'good' | 'warn' | 'bad';
 }) {
+  const toneCls =
+    tone === 'good'
+      ? 'text-mint-ink'
+      : tone === 'warn'
+        ? 'text-butter-ink'
+        : tone === 'bad'
+          ? 'text-rose-ink'
+          : 'text-foreground';
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-xs w-20 text-foreground-muted">{label}</span>
-      <div className="flex-1 h-2 rounded-full bg-surface-inset overflow-hidden">
-        <div
-          className={cn(
-            'h-full transition-[width] duration-500',
-            tone === 'rose' && 'bg-rose-ink/70',
-            tone === 'butter' && 'bg-butter-ink/70',
-            tone === 'sky' && 'bg-sky-ink/70'
-          )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-sm tabular-nums w-16 text-right">{count.toLocaleString()}</span>
+    <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+        {label}
+      </span>
+      <span className={cn('text-2xl font-semibold tabular-nums tracking-tight', toneCls)}>
+        {value}
+      </span>
+      {hint && <span className="text-[11px] text-foreground-muted">{hint}</span>}
+    </div>
+  );
+}
+
+function FindingRow({
+  finding,
+  open,
+  onToggle,
+}: {
+  finding: Finding;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const meta = SEVERITY[finding.severity];
+  const Icon = meta.icon;
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-foreground-subtle" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-foreground-subtle" />
+        )}
+        <Icon className={cn('size-4 shrink-0', meta.cls)} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-sm font-medium text-foreground">{finding.title}</span>
+          <span className="text-xs text-foreground-muted">{finding.detail}</span>
+        </span>
+        <Badge variant="outline">{finding.urls.length}</Badge>
+      </button>
+      {open && (
+        <ul className="max-h-64 overflow-auto border-t border-border px-3 py-2">
+          {finding.urls.map((u) => (
+            <li key={u} className="py-0.5">
+              <a
+                href={u}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-xs text-accent hover:underline break-all"
+              >
+                {u}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
