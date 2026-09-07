@@ -16,6 +16,7 @@ import {
   Bot,
   HelpCircle,
   LineChart,
+  TrendingUp,
   type LucideIcon,
   PenSquare,
   Newspaper,
@@ -53,6 +54,7 @@ export type ToolRequirement =
   | 'DataForSEO'
   | 'Serper'
   | 'Google Places'
+  | 'Google Search'
   | 'Anthropic'
   | 'Google Analytics'
   | 'Search Console';
@@ -100,6 +102,12 @@ export const REQUIREMENT_SETUP: Record<
     tab: 'apis',
     field: 'googleApiKey',
     what: 'a Google API key with the Places API enabled',
+    adminOnly: true,
+  },
+  'Google Search': {
+    tab: 'apis',
+    field: 'googleCx',
+    what: 'a Google API key and a Search Engine ID (CX)',
     adminOnly: true,
   },
   Anthropic: {
@@ -188,6 +196,21 @@ export const ALL_TOOLS: ToolEntry[] = [
       'Scan rankings across a geographic grid around a location',
       'Show position drop-off as distance increases',
       'Save reports and regenerate them over time',
+    ],
+  },
+  {
+    id: 'rank-tracker',
+    label: 'Rank Tracker',
+    path: '/local-business/rank-tracker',
+    icon: TrendingUp,
+    section: 'Local Business',
+    description: 'Track keyword positions for a business over time.',
+    keywords: ['rank', 'position', 'tracking', 'keywords', 'serp'],
+    requires: 'Google Search',
+    whatItDoes: [
+      'Track keyword positions per business, with best and worst seen',
+      'Record positions by hand, or refresh them automatically',
+      'Keep competitors, backlinks and traffic alongside them',
     ],
   },
   {

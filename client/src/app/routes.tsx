@@ -57,6 +57,9 @@ const GbaComparePage = lazy(
   () => import('@/features/local-business/GbaComparePage')
 );
 const HeatmapPage = lazy(() => import('@/features/local-business/HeatmapPage'));
+const RankTrackerPage = lazy(
+  () => import('@/features/local-business/RankTrackerPage')
+);
 const CitationsPage = lazy(() => import('@/features/local-business/CitationsPage'));
 
 // Web Search tools
@@ -202,6 +205,7 @@ export function AppRoutes() {
             element={<GbaComparePage />}
           />
           <Route path="/local-business/heatmap" element={<HeatmapPage />} />
+          <Route path="/local-business/rank-tracker" element={<RankTrackerPage />} />
           <Route path="/local-business/citations" element={<CitationsPage />} />
 
           {/* Web Search */}
