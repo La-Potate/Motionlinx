@@ -20,6 +20,8 @@ import {
 import authenticatedFetch from '@/shared/api/httpClient';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui/tabs';
+import { BusinessProfilesTab } from './components/BusinessProfilesTab';
 import { Card, CardContent } from '@/shared/ui/card';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
@@ -199,14 +201,20 @@ export default function CitationsPage() {
       eyebrow="Local Business"
       icon={FileText}
       title="Business citations"
-      description="Track presence across 70+ citation publishers that influence local rank."
-      actions={
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="size-4" /> New audit
-        </Button>
-      }
+      description="Keep business details consistent, then audit them across 52 US or 38 UK directories."
     >
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] gap-4">
+      <Tabs defaultValue="audits">
+        <TabsList>
+          <TabsTrigger value="audits">Audits</TabsTrigger>
+          <TabsTrigger value="profiles">Business profiles</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="audits" className="flex flex-col gap-4">
+          <Button onClick={() => setShowCreate(true)} className="self-start">
+            <Plus className="size-4" /> New audit
+          </Button>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] gap-4">
         {/* Audit list */}
         <div className="flex flex-col gap-3">
           <div className="relative">
@@ -410,8 +418,16 @@ export default function CitationsPage() {
               </Card>
             </>
           )}
-        </div>
-      </div>
+          </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="profiles">
+          {/* Entity management + profile-health scoring. Eight endpoints that
+              shipped with a service module and no interface. */}
+          <BusinessProfilesTab />
+        </TabsContent>
+      </Tabs>
 
       {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
