@@ -24,7 +24,6 @@ const TIER_CONFIGS = {
 const baseOptions = {
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
 };
 
 function tieredRateLimit(tier) {

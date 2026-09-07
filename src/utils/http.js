@@ -1,17 +1,39 @@
 'use strict';
 
+const { TRUST_PROXY } = require('../config/env');
 /**
  * Resolve the originating client IP. Reads `x-forwarded-for` first (proxy/CDN
  * forwarded), falls back to the connection's remote address with IPv4-mapped
  * IPv6 prefix stripped.
  */
+/**
+ * The client's address, honouring a reverse proxy only when one is configured.
+ *
+ * Forwarding headers are attacker-controlled unless something in front of the
+ * app overwrites them, so they are read only when TRUST_PROXY says a proxy is
+ * actually there. Without it we fall back to the socket address.
+ *
+ * CF-Connecting-IP is preferred over X-Forwarded-For behind Cloudflare:
+ * Cloudflare sets it itself and ignores whatever the client sent, whereas
+ * X-Forwarded-For is a chain the client can prepend to.
+ */
 function resolveClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded && typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
+  const strip = (v) => String(v || '').trim().replace(/^::ffff:/, '');
+  const trusted = Boolean(TRUST_PROXY && TRUST_PROXY.trim());
+
+  if (trusted) {
+    const cf = req.headers['cf-connecting-ip'];
+    if (typeof cf === 'string' && cf.trim()) return strip(cf);
+
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return strip(forwarded.split(',')[0]);
+    }
   }
-  const raw = req.connection?.remoteAddress || req.socket?.remoteAddress || '';
-  return raw.replace(/^::ffff:/, '');
+
+  // Express resolves req.ip through the same trust-proxy setting, so it is
+  // already correct in both cases; the raw socket is only a last resort.
+  return strip(req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress);
 }
 
 /**

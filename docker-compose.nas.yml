@@ -1,0 +1,53 @@
+# Motionlinx on a NAS, published through a Cloudflare Tunnel.
+#
+#   docker compose -f docker-compose.nas.yml up -d --build
+#
+# Differences from docker-compose.yml, which is the plain local-port setup:
+#
+#   - No published ports. cloudflared reaches the app over the internal
+#     compose network, so nothing is exposed on the LAN and there is no port
+#     to forward on the router. This is the main reason to run it this way.
+#   - TRUST_PROXY=1 is REQUIRED here. Behind the tunnel every request arrives
+#     from cloudflared's address, so without it express-rate-limit meters the
+#     whole userbase as one client and the 300/15min global limit is shared by
+#     everyone. One hop, so 1 — not `true`, which would trust a client-supplied
+#     forwarding chain.
+#   - cloudflared runs alongside and dials out, so the NAS needs no inbound
+#     firewall rule at all.
+
+services:
+  web:
+    build: .
+    image: motionlinx:local
+    container_name: motionlinx
+    restart: unless-stopped
+    expose:
+      - "3000" # internal to the compose network only
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - USERDATA_PATH=/var/lib/app-data
+      # One proxy hop: cloudflared.
+      - TRUST_PROXY=1
+      # Must be the public https origin, or CORS fails closed in production.
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:?set CLIENT_ORIGIN to your public https URL}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      # Without MASTER_KEY, saved API keys are written to disk in plaintext.
+      - MASTER_KEY=${MASTER_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+    volumes:
+      # Point this at a real NAS share. Everything that must survive a rebuild
+      # lives here: SQLite, per-user files, captures, system settings.
+      - ${USERDATA_PATH:-./app-data}:/var/lib/app-data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: motionlinx-tunnel
+    restart: unless-stopped
+    # Token-based tunnel: create it in the Cloudflare Zero Trust dashboard,
+    # add a public hostname routing to http://web:3000, and paste the token.
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      web:
+        condition: service_healthy

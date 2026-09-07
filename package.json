@@ -1,13 +1,14 @@
 {
   "name": "motionlinx-server",
   "version": "0.6.0",
-  "description": "Motionlinx — workspace for every growth toolkit (SEO Toolkit, AI Traffic Report, …)",
+  "description": "Motionlinx \u2014 workspace for every growth toolkit (SEO Toolkit, AI Traffic Report, \u2026)",
   "main": "src/index.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "start": "node src/index.js",
+    "predev": "node scripts/free-port.js",
     "dev": "nodemon src/index.js",
     "build": "cd client && npm run build",
     "install-client": "cd client && npm install",

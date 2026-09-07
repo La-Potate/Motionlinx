@@ -1,5 +1,6 @@
 'use strict';
 
+const { resolveClientIp } = require('../utils/http');
 const net = require('node:net');
 const logger = require('../utils/logger');
 const { STRIPE_WEBHOOK_IPS } = require('../config/env');
@@ -59,17 +60,12 @@ function parseRanges(raw) {
 
 const allowlist = parseRanges(STRIPE_WEBHOOK_IPS);
 
+// Uses the shared resolver so this control honours TRUST_PROXY like the rest
+// of the app. Reading X-Forwarded-For unconditionally would let anyone forge a
+// Stripe address and slip past the allowlist; signature verification would
+// still catch them, but an allowlist that any client can satisfy is not one.
 function extractClientIp(req) {
-  // Match resolveClientIp's behavior: trust the first X-Forwarded-For hop
-  // (assumes a single trusted proxy). Operators behind multiple proxies should
-  // configure trust proxy in app.js.
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length) {
-    const first = xff.split(',')[0].trim();
-    if (first) return first.replace(/^::ffff:/, '');
-  }
-  const ip = req.ip || req.connection?.remoteAddress || '';
-  return ip.replace(/^::ffff:/, '');
+  return resolveClientIp(req);
 }
 
 function stripeIpAllowlist(req, res, next) {

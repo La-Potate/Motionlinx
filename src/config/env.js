@@ -21,6 +21,16 @@ const envSchema = z.object({
   // CORS
   CLIENT_ORIGIN: z.string().optional().default(''),
 
+  // Reverse-proxy hops in front of the app. REQUIRED when running behind
+  // cloudflared, nginx, or any tunnel: without it every request appears to
+  // come from the proxy's own address, so express-rate-limit meters the
+  // entire userbase as a single client and IP bans hit everyone at once.
+  //
+  // Use the NUMBER of proxies (cloudflared alone = 1). Avoid 'true', which
+  // trusts the whole X-Forwarded-For chain and lets a client forge its own
+  // address to slip past rate limits and bans.
+  TRUST_PROXY: z.string().optional().default(''),
+
   // Storage
   USERDATA_PATH: z.string().optional(),
   LEGACY_USERDATA_PATH: z.string().optional(),
@@ -126,6 +136,7 @@ module.exports = {
   REFRESH_TOKEN_TTL_DAYS: env.REFRESH_TOKEN_TTL_DAYS,
   INITIAL_ADMIN_PASSWORD: env.INITIAL_ADMIN_PASSWORD,
   CLIENT_ORIGIN: env.CLIENT_ORIGIN,
+  TRUST_PROXY: env.TRUST_PROXY,
   USERDATA_PATH: env.USERDATA_PATH,
   LEGACY_USERDATA_PATH: env.LEGACY_USERDATA_PATH,
   GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,

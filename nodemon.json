@@ -1,0 +1,18 @@
+{
+  "//": "Without this, nodemon watches the whole working directory — including app-data/, whose SQLite WAL and SHM files change on every single request. That made the dev server restart in a loop under normal use. Watch only backend source.",
+  "watch": ["src"],
+  "ext": "js,json,sql",
+  "ignore": [
+    "app-data/**",
+    "client/**",
+    "tests/**",
+    "node_modules/**",
+    "scripts/**",
+    "**/*.test.js",
+    "**/*.test.mjs"
+  ],
+  "delay": 300,
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

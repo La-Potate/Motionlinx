@@ -31,7 +31,12 @@ function buildCorsMiddleware() {
       if (!origin) return callback(null, true);
       if (whitelist.includes(origin)) return callback(null, true);
       logger.warn({ origin }, 'CORS rejected origin');
-      return callback(new Error('Not allowed by CORS'));
+      // Tagged so the error handler answers 403. Left untagged this surfaced
+      // as a 500, which reads as an app fault in logs and alerting when it is
+      // really just a request from an origin that is not allowed.
+      const err = new Error('Not allowed by CORS');
+      err.status = 403;
+      return callback(err);
     },
     credentials: true,
   });

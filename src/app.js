@@ -59,6 +59,18 @@ async function buildApp() {
 
   const app = express();
 
+  // Behind a reverse proxy (cloudflared, nginx) the socket address is the
+  // proxy's, so req.ip must come from X-Forwarded-For instead. Configured
+  // rather than assumed: trusting a proxy that is not there would let any
+  // client spoof its address via a forged header.
+  if (envConfig.TRUST_PROXY) {
+    const raw = envConfig.TRUST_PROXY.trim();
+    const hops = Number(raw);
+    const value = Number.isInteger(hops) && hops >= 0 ? hops : raw;
+    app.set('trust proxy', value);
+    logger.info({ trustProxy: value }, 'Trusting reverse proxy for client IPs');
+  }
+
   if (!GOOGLE_CLIENT_ID) {
     logger.warn('Google authentication is disabled. Set GOOGLE_CLIENT_ID to enable it.');
   }
@@ -98,7 +110,6 @@ async function buildApp() {
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false },
   });
   app.use('/api', limiter);
   app.use(
@@ -241,10 +252,16 @@ async function buildApp() {
     res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
   });
 
-  // Last-resort error handler.
+  // Last-resort error handler. Honours an explicit status when the thrower
+  // set one (e.g. a rejected CORS origin is 403, not a server fault), and
+  // logs client errors at warn so 4xx noise does not look like an outage.
   app.use((err, _req, res, _next) => {
-    logger.error({ err }, 'Unhandled error');
-    res.status(500).json({ error: 'Something went wrong!' });
+    const status = Number(err?.status || err?.statusCode) || 500;
+    if (status >= 500) logger.error({ err }, 'Unhandled error');
+    else logger.warn({ err: err?.message, status }, 'Request rejected');
+    res.status(status).json({
+      error: status >= 500 ? 'Something went wrong!' : err.message || 'Request rejected',
+    });
   });
 
   return app;
