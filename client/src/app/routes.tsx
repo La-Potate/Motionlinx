@@ -44,6 +44,7 @@ const AiSeoLanding = lazy(() => import('@/features/ai-seo/LandingPage'));
 const ContentLanding = lazy(() => import('@/features/content/LandingPage'));
 
 // Settings / admin / billing
+const ProjectsPage = lazy(() => import('@/features/projects/ProjectsPage'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const AdminPage = lazy(() => import('@/features/admin/AdminPage'));
 const PricingPage = lazy(() => import('@/features/billing/PricingPage'));
@@ -194,6 +195,7 @@ export function AppRoutes() {
           <Route path="/home" element={<Navigate to="/dashboard" replace />} />
           <Route path="/ai-traffic-report" element={<AiTrafficReportPage />} />
           <Route path="/AI-Assistant" element={<AiAssistantPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
 
           {/* Local Business */}

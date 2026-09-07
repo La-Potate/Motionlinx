@@ -130,7 +130,16 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {STANDALONE_APPS.map((app) => {
             const Icon = app.icon;
-            const conn = app.id === 'ai-assistant' ? gsc : ga4;
+            // Only apps that actually depend on a Google connection show a
+            // connection badge. Keyed off the app's own requirement rather
+            // than its position, so adding an app with no requirement (e.g.
+            // Projects) does not inherit someone else's status.
+            const conn =
+              app.requires === 'Search Console'
+                ? gsc
+                : app.requires === 'Google Analytics'
+                  ? ga4
+                  : null;
             return (
               <div
                 key={app.id}

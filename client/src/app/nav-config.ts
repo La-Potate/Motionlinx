@@ -18,6 +18,7 @@ import {
   LineChart,
   TrendingUp,
   MessageSquare,
+  FolderKanban,
   type LucideIcon,
   PenSquare,
   Newspaper,
@@ -551,6 +552,14 @@ export type AppEntry = {
 };
 
 export const STANDALONE_APPS: AppEntry[] = [
+  {
+    id: 'projects',
+    label: 'Projects',
+    path: '/projects',
+    icon: FolderKanban,
+    description:
+      'Group work into projects and columns and track the tasks inside them. Everything is stored per account.',
+  },
   {
     id: 'ai-assistant',
     label: 'AI Assistant',
