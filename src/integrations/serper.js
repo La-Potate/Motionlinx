@@ -1,5 +1,7 @@
 'use strict';
 
+const { upstreamAuthError, isAuthStatus } = require('../utils/http');
+const { getApiKey } = require('../services/apiKeys');
 const logger = require('../utils/logger');
 const { ensureFetch } = require('../utils/smartFetch');
 const { getSystemApiKey } = require('../storage/systemSettings');
@@ -39,6 +41,7 @@ async function checkCitationViaSerper(serperKey, audit, source) {
   });
 
   if (!response.ok) {
+    if (isAuthStatus(response.status)) throw upstreamAuthError('Serper');
     const errorText = await response.text();
     throw new Error(`Serper API error: ${response.status} - ${errorText}`);
   }
@@ -113,7 +116,8 @@ async function checkCitationViaSerper(serperKey, audit, source) {
  */
 async function fetchSerperReviews({ cid, placeId, num = 5, userId }) {
   try {
-    const effectiveKey = getSystemApiKey('serper');
+    // Caller's own key first; the workspace key is only a fallback.
+    const effectiveKey = await getApiKey(userId, 'serper');
     if (!effectiveKey) return { reviews: [], error: 'Serper API key not configured.' };
 
     const payload = {};

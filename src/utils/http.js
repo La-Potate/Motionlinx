@@ -46,4 +46,27 @@ function maskApiKey(value = '') {
   return `${value.slice(0, 4)}${'•'.repeat(value.length - 8)}${value.slice(-4)}`;
 }
 
-module.exports = { resolveClientIp, maskApiKey };
+/**
+ * Build an error for "the provider rejected the credential".
+ *
+ * With bring-your-own-key this is the single most likely failure, and it is
+ * the user's to fix — so it must not surface as a generic 500. Tagged with a
+ * status the route can pass straight through.
+ */
+function upstreamAuthError(provider) {
+  const err = new Error(
+    `${provider} rejected the API key. Check it in Settings -> API keys, or use Test to verify it.`,
+  );
+  err.status = 400;
+  err.upstreamAuth = true;
+  return err;
+}
+
+/** True when an upstream HTTP status means "bad credential". */
+function isAuthStatus(status) {
+  return status === 401 || status === 403;
+}
+
+module.exports = {
+  upstreamAuthError,
+  isAuthStatus, resolveClientIp, maskApiKey };

@@ -1,5 +1,6 @@
 'use strict';
 
+const { getApiKey } = require('../services/apiKeys');
 const logger = require('../utils/logger');
 const { dbAll, dbRun } = require('../utils/dbAsync');
 const { getSystemApiKey } = require('../storage/systemSettings');
@@ -13,7 +14,9 @@ const JOB_TYPE = 'citation-audit';
 const auditJobIds = new Map();
 
 async function runCitationAuditHandler({ auditId, audit }, { signal, reportProgress }) {
-  const serperKey = getSystemApiKey('serper');
+  // Background work has no request, but the audit row records who owns it —
+  // so the audit runs on that user's key, not a workspace one.
+  const serperKey = await getApiKey(audit.user_id, 'serper');
   if (!serperKey) {
     logger.error({ auditId }, 'Citation audit failed: no Serper API key configured');
     await dbRun("UPDATE citation_audits SET status = 'failed' WHERE id = ?", [auditId]);

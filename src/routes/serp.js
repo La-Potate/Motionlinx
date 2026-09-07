@@ -1,5 +1,6 @@
 'use strict';
 
+const { getApiKey } = require('../services/apiKeys');
 const express = require('express');
 const logger = require('../utils/logger');
 const authenticate = require('../middleware/authenticate');
@@ -123,7 +124,7 @@ router.post('/serper-search', heavyLimit, async (req, res) => {
     }
 
     let effectiveKey = typeof apiKey === 'string' ? apiKey.trim() : '';
-    if (!effectiveKey) effectiveKey = getSystemApiKey('serper');
+    if (!effectiveKey) effectiveKey = await getApiKey(req.user.id, 'serper');
     if (!effectiveKey) {
       return res.status(400).json({
         success: false,
@@ -215,7 +216,7 @@ router.post('/serper-reviews', heavyLimit, async (req, res) => {
     }
 
     let effectiveKey = typeof apiKey === 'string' ? apiKey.trim() : '';
-    if (!effectiveKey) effectiveKey = getSystemApiKey('serper');
+    if (!effectiveKey) effectiveKey = await getApiKey(req.user.id, 'serper');
     if (!effectiveKey) {
       return res.status(400).json({
         success: false,

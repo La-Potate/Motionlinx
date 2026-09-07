@@ -12,9 +12,10 @@ services:
       # Required in production — the server refuses to boot without these.
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
       - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:2255}
-      # Optional. Without MASTER_KEY, saved API keys are written to disk in
-      # plaintext; set it and migration 006 encrypts the existing rows.
-      - MASTER_KEY=${MASTER_KEY:-}
+      # REQUIRED in production. Every user stores their own provider keys,
+      # so without at-rest encryption other people's credentials would sit in
+      # plaintext on disk. The server refuses to start without it.
+      - MASTER_KEY=${MASTER_KEY:?set MASTER_KEY - generate with: openssl rand -base64 32}
       # Optional. Enables Sign in with Google, GA4 and Search Console.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       # Optional bootstrap for a fresh database. Without it, production

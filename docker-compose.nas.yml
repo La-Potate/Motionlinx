@@ -32,8 +32,10 @@ services:
       # Must be the public https origin, or CORS fails closed in production.
       - CLIENT_ORIGIN=${CLIENT_ORIGIN:?set CLIENT_ORIGIN to your public https URL}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
-      # Without MASTER_KEY, saved API keys are written to disk in plaintext.
-      - MASTER_KEY=${MASTER_KEY:-}
+      # REQUIRED in production. Every user stores their own provider keys,
+      # so without at-rest encryption other people's credentials would sit in
+      # plaintext on disk. The server refuses to start without it.
+      - MASTER_KEY=${MASTER_KEY:?set MASTER_KEY - generate with: openssl rand -base64 32}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
     volumes:

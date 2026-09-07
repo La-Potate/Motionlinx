@@ -1,5 +1,6 @@
 'use strict';
 
+const { getApiKey } = require('../services/apiKeys');
 const express = require('express');
 const logger = require('../utils/logger');
 const { dbGet, dbAll, dbRun } = require('../utils/dbAsync');
@@ -24,8 +25,9 @@ router.use(authenticate);
 const claudeLimit = tieredRateLimit('heavy');
 
 
-function pickClaudeKey() {
-  return resolveClaudeKey(getSystemApiKey('claude'));
+async function pickClaudeKey(userId) {
+  // Their key, then the workspace key, then CLAUDE_API_KEY.
+  return resolveClaudeKey(await getApiKey(userId, 'claude'));
 }
 
 function extractText(data) {
@@ -41,7 +43,7 @@ function extractText(data) {
 router.post('/press-release', claudeLimit, async (req, res) => {
   try {
     const { website, author, service } = req.body || {};
-    const claudeKey = pickClaudeKey();
+    const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
       return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
     }
@@ -178,7 +180,7 @@ router.delete('/press-release/:id', async (req, res) => {
 router.post('/blog-post', claudeLimit, async (req, res) => {
   try {
     const { website, wordCount, topic } = req.body || {};
-    const claudeKey = pickClaudeKey();
+    const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
       return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
     }
@@ -323,7 +325,7 @@ router.delete('/blog-post/:id', async (req, res) => {
 router.post('/beyond-intent/generate', claudeLimit, async (req, res) => {
   try {
     const { systemPrompt, userPrompt } = req.body || {};
-    const claudeKey = pickClaudeKey();
+    const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
       return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
     }

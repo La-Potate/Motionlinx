@@ -18,6 +18,15 @@ const {
 const { CLAUDE_API_KEY } = require('../config/env');
 const { encryptSecret, decryptSecret } = require('../utils/crypto');
 const { getApiUsageSnapshot } = require('../services/apiQuota');
+const { getKeyStatuses, resolveApiKey } = require('../services/apiKeys');
+const {
+  testSerper,
+  testClaude,
+  testDataForSeo,
+  testGooglePlaces,
+  testGoogleSearch,
+} = require('../services/apiKeyTest');
+const { tieredRateLimit } = require('../middleware/rateLimits');
 
 // Setting keys whose values are secrets — encrypted at rest when MASTER_KEY
 // is configured. Read sites are responsible for decrypting on the way out.
@@ -88,6 +97,63 @@ router.post('/prompts', requireAdmin, (req, res) => {
   }
 });
 
+// ---- /api-keys/test ----
+// Validate a credential against the real provider. Accepts a value to test
+// an unsaved key straight from the form; with none, tests what is stored for
+// this user, so "does my saved key still work?" is answerable too.
+router.post('/api-keys/test', tieredRateLimit('medium'), async (req, res) => {
+  const userId = req.user.id;
+  const { service, value, login, password, cx } = req.body || {};
+
+  const resolved = async (name) =>
+    typeof value === 'string' && value.trim()
+      ? value.trim()
+      : (await resolveApiKey(userId, name)).value;
+
+  try {
+    let result;
+    switch (service) {
+      case 'serper':
+        result = await testSerper(await resolved('serper'));
+        break;
+      case 'claude':
+        result = await testClaude(await resolved('claude'));
+        break;
+      case 'dataForSeo': {
+        const useLogin =
+          typeof login === 'string' && login.trim()
+            ? login.trim()
+            : (await resolveApiKey(userId, 'dataForSeoLogin')).value;
+        const usePassword =
+          typeof password === 'string' && password.trim()
+            ? password.trim()
+            : (await resolveApiKey(userId, 'dataForSeoPassword')).value;
+        result = await testDataForSeo({ login: useLogin, password: usePassword });
+        break;
+      }
+      case 'googlePlaces':
+        result = await testGooglePlaces(await resolved('googlePlaces'));
+        break;
+      case 'googleSearch': {
+        const useCx =
+          typeof cx === 'string' && cx.trim()
+            ? cx.trim()
+            : (await resolveApiKey(userId, 'googleCx')).value;
+        result = await testGoogleSearch({ key: await resolved('googleApiKey'), cx: useCx });
+        break;
+      }
+      default:
+        return res.status(400).json({ error: 'Unknown service.' });
+    }
+    // Always 200: the test ran. Whether the KEY is good is in the body, so a
+    // rejected key is not reported as a failed request.
+    res.json(result);
+  } catch (err) {
+    logger.error({ err, service }, 'API key test failed');
+    res.status(500).json({ ok: false, reason: 'error', message: 'Test could not be run.' });
+  }
+});
+
 // ---- /api-keys (POST = save; GET = read) ----
 const USER_SETTING_KEYS = [
   'googlePlaces_api_key',
@@ -115,9 +181,13 @@ async function upsertUserSetting(userId, key, value) {
   );
 }
 
-router.post('/api-keys', requireAdmin, async (req, res) => {
+// Bring-your-own-key: every user saves keys onto their own account. Only the
+// workspace-level OAuth client and the optional "share with the workspace"
+// step stay admin-gated below.
+router.post('/api-keys', async (req, res) => {
   try {
     const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
     const payload = req.body || {};
     const userUpdates = [];
     const diskPayload = { apiKeys: {} };
@@ -162,17 +232,19 @@ router.post('/api-keys', requireAdmin, async (req, res) => {
     const systemPayload = { apiKeys: {} };
     if (Object.hasOwn(payload, 'serperApiKey')) {
       const v = assignUserSetting('serper_api_key', payload.serperApiKey, 'serper');
-      systemPayload.apiKeys.serper = v;
+      // Admin keys double as the workspace fallback; a member's key is
+      // theirs alone and must not overwrite it.
+      if (isAdmin) systemPayload.apiKeys.serper = v;
     }
     if (Object.hasOwn(payload, 'claudeApiKey')) {
       const v = assignUserSetting('claude_api_key', payload.claudeApiKey, 'claude');
-      systemPayload.apiKeys.claude = v;
+      if (isAdmin) systemPayload.apiKeys.claude = v;
     }
-    if (Object.hasOwn(payload, 'googleOauthClientId')) {
+    if (isAdmin && Object.hasOwn(payload, 'googleOauthClientId')) {
       const v = typeof payload.googleOauthClientId === 'string' ? payload.googleOauthClientId.trim() : '';
       systemPayload.apiKeys.googleOauthClientId = v;
     }
-    if (Object.hasOwn(payload, 'googleOauthClientSecret')) {
+    if (isAdmin && Object.hasOwn(payload, 'googleOauthClientSecret')) {
       const v = typeof payload.googleOauthClientSecret === 'string' ? payload.googleOauthClientSecret.trim() : '';
       systemPayload.apiKeys.googleOauthClientSecret = v;
     }
@@ -197,69 +269,34 @@ router.post('/api-keys', requireAdmin, async (req, res) => {
   }
 });
 
+/** OAuth connection state for a user. Tokens are never returned — only
+ *  whether one exists and which Google account it belongs to. */
+async function connectionStatus(userId, prefix) {
+  const rows = await dbAll(
+    `SELECT setting_key, setting_value FROM user_settings
+     WHERE user_id = ? AND setting_key IN (?, ?, ?)`,
+    [userId, `${prefix}_access_token`, `${prefix}_refresh_token`, `${prefix}_google_email`],
+  );
+  const map = {};
+  rows.forEach((row) => {
+    map[row.setting_key] = row.setting_value || '';
+  });
+  return {
+    connected: Boolean(map[`${prefix}_access_token`] || map[`${prefix}_refresh_token`]),
+    email: map[`${prefix}_google_email`] || null,
+  };
+}
+
 router.get('/api-keys', async (req, res) => {
   try {
     const userId = req.user.id;
     const isAdmin = req.user.role === 'admin';
 
-    const userRows = await dbAll(
-      `SELECT setting_key, setting_value FROM user_settings
-       WHERE user_id = ? AND setting_key IN (${USER_SETTING_KEYS.map(() => '?').join(',')})`,
-      [userId, ...USER_SETTING_KEYS],
-    );
-    const userKeys = {};
-    userRows.forEach((row) => {
-      const raw = row.setting_value || '';
-      userKeys[row.setting_key] = SECRET_SETTING_KEYS.has(row.setting_key)
-        ? decryptSecret(raw) || ''
-        : raw;
-    });
-
-    const diskSettings = readUserSettingsFromDisk(userId);
-    const userSerperBackup = userKeys.serper_api_key || diskSettings?.apiKeys?.serper || '';
-    const userClaudeBackup = userKeys.claude_api_key || diskSettings?.apiKeys?.claude || '';
-    const googleKey =
-      userKeys.googlePlaces_api_key ||
-      userKeys.google_api_key ||
-      diskSettings?.apiKeys?.googlePlaces ||
-      diskSettings?.apiKeys?.googleApiKey ||
-      '';
-
-    const adminRows = await dbAll(
-      `SELECT us.setting_key, us.setting_value
-       FROM user_settings us
-       JOIN users u ON us.user_id = u.id
-       WHERE u.role = 'admin' AND us.setting_key IN ('googlePlaces_api_key', 'google_api_key', 'google_cx')
-       ORDER BY u.id ASC`,
-    );
-    const adminKeys = {};
-    adminRows.forEach((row) => {
-      const raw = row.setting_value || '';
-      adminKeys[row.setting_key] = SECRET_SETTING_KEYS.has(row.setting_key)
-        ? decryptSecret(raw) || ''
-        : raw;
-    });
-
-    const response = {
-      managed: true,
-      isAdmin,
-      googlePlaces: googleKey || adminKeys.googlePlaces_api_key || adminKeys.google_api_key || '',
-      googleApiKey: googleKey || adminKeys.googlePlaces_api_key || adminKeys.google_api_key || '',
-      googleCx: userKeys.google_cx || diskSettings?.apiKeys?.googleCx || adminKeys.google_cx || '',
-      dataForSeoLogin: isAdmin
-        ? userKeys.dataForSeo_login || diskSettings?.apiKeys?.dataForSeoLogin || ''
-        : '',
-      dataForSeoPassword: isAdmin
-        ? userKeys.dataForSeo_password || diskSettings?.apiKeys?.dataForSeoPassword || ''
-        : '',
-    };
-
-    const legacyDataForSeo =
-      userKeys.dataForSeo_api_key ||
-      diskSettings?.apiKeys?.dataForSeo ||
-      [response.dataForSeoLogin, response.dataForSeoPassword].filter((p) => p).join(':');
-    response.dataForSeo = isAdmin ? legacyDataForSeo : '';
-    response.dataForSeoManaged = Boolean(legacyDataForSeo);
+    // Status only — never the key itself. Previously this returned raw
+    // values, and the Google fields fell back to the ADMIN's key, so any
+    // logged-in user could read the workspace admin's Google API key and CX
+    // in plaintext from this endpoint.
+    const keys = await getKeyStatuses(userId);
 
     const systemSettings = readSystemSettings();
     const apiKeys =
@@ -267,87 +304,31 @@ router.get('/api-keys', async (req, res) => {
         ? systemSettings.apiKeys
         : {};
 
-    // Serper: sync system <-> user backup
-    let serperKey = apiKeys.serper || '';
-    if (isAdmin && serperKey && !userSerperBackup) {
-      await upsertUserSetting(userId, 'serper_api_key', serperKey);
-      writeUserSettingsToDisk(userId, { apiKeys: { serper: serperKey } });
-    }
-    if (!serperKey && isAdmin && userSerperBackup) {
-      serperKey = userSerperBackup;
-      writeSystemSettings({ apiKeys: { serper: serperKey } });
-    }
-    response.serperStatus = {
-      configured: Boolean(serperKey),
-      masked: serperKey ? maskApiKey(serperKey) : '',
-    };
-    response.serperApiKey = isAdmin ? serperKey : '';
-
-    // Claude: same pattern
-    let claudeKey = apiKeys.claude || CLAUDE_API_KEY || '';
-    if (isAdmin && claudeKey && !userClaudeBackup) {
-      await upsertUserSetting(userId, 'claude_api_key', claudeKey);
-      writeUserSettingsToDisk(userId, { apiKeys: { claude: claudeKey } });
-    }
-    if (!claudeKey && isAdmin && userClaudeBackup) {
-      claudeKey = userClaudeBackup;
-      writeSystemSettings({ apiKeys: { claude: claudeKey } });
-    }
-    response.claudeStatus = {
-      configured: Boolean(claudeKey),
-      masked: isAdmin && claudeKey ? maskApiKey(claudeKey) : '',
-    };
-    response.claudeApiKey = isAdmin ? claudeKey : '';
-
-    response.quotas = {
-      serperReviews: await getApiUsageSnapshot(userId, 'serper_reviews'),
-    };
-
-    // GA4 OAuth — admin-only client credentials, plus the current user's
-    // connection state so the same panel can show "Connect / Disconnect"
-    // alongside the rest of the API settings.
-    const googleOauthClientId = apiKeys.googleOauthClientId || '';
-    const googleOauthClientSecret = apiKeys.googleOauthClientSecret || '';
-    response.googleOauthClientId = isAdmin ? googleOauthClientId : '';
-    response.googleOauthClientSecret = isAdmin ? googleOauthClientSecret : '';
-    response.googleOauthStatus = {
-      configured: Boolean(googleOauthClientId && googleOauthClientSecret),
-      clientIdMasked: googleOauthClientId ? maskApiKey(googleOauthClientId) : '',
-    };
-
-    const ga4Rows = await dbAll(
-      `SELECT setting_key, setting_value FROM user_settings
-       WHERE user_id = ? AND setting_key IN ('ga4_access_token', 'ga4_refresh_token', 'ga4_google_email')`,
-      [userId],
-    );
-    const ga4Map = {};
-    ga4Rows.forEach((row) => {
-      ga4Map[row.setting_key] = row.setting_value || '';
+    res.json({
+      managed: true,
+      isAdmin,
+      // Per-service: { configured, masked, source: 'user'|'workspace'|'env' }.
+      keys,
+      quotas: {
+        serperReviews: await getApiUsageSnapshot(userId, 'serper_reviews'),
+      },
+      // Workspace OAuth client — genuinely app-level, not a per-user key.
+      // Only its presence is reported, never the secret.
+      googleOauthStatus: {
+        configured: Boolean(apiKeys.googleOauthClientId && apiKeys.googleOauthClientSecret),
+        clientIdMasked: apiKeys.googleOauthClientId
+          ? maskApiKey(apiKeys.googleOauthClientId)
+          : '',
+        canEdit: isAdmin,
+      },
+      ga4Status: await connectionStatus(userId, 'ga4'),
+      gscStatus: await connectionStatus(userId, 'gsc'),
     });
-    response.ga4Status = {
-      connected: Boolean(ga4Map.ga4_access_token || ga4Map.ga4_refresh_token),
-      email: ga4Map.ga4_google_email || null,
-    };
-
-    const gscRows = await dbAll(
-      `SELECT setting_key, setting_value FROM user_settings
-       WHERE user_id = ? AND setting_key IN ('gsc_access_token', 'gsc_refresh_token', 'gsc_google_email')`,
-      [userId],
-    );
-    const gscMap = {};
-    gscRows.forEach((row) => {
-      gscMap[row.setting_key] = row.setting_value || '';
-    });
-    response.gscStatus = {
-      connected: Boolean(gscMap.gsc_access_token || gscMap.gsc_refresh_token),
-      email: gscMap.gsc_google_email || null,
-    };
-
-    res.json(response);
   } catch (err) {
-    logger.error({ err }, 'API keys fetch error');
-    res.status(500).json({ error: 'Failed to fetch API keys' });
+    logger.error({ err }, 'Failed to load API key status');
+    res.status(500).json({ error: 'Failed to load API keys.' });
   }
 });
+
 
 module.exports = router;

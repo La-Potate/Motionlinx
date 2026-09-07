@@ -96,6 +96,18 @@ if (env.NODE_ENV === 'production') {
   if (!env.CLIENT_ORIGIN) {
     fatal.push('CLIENT_ORIGIN is required in production (CORS fails closed)');
   }
+  // Every user stores their own provider credentials, so running without
+  // at-rest encryption would keep other people's API keys in plaintext on
+  // disk. Refused rather than warned about, matching how JWT_SECRET and
+  // CLIENT_ORIGIN are treated — a warning is too easy to never read.
+  if (!env.MASTER_KEY) {
+    fatal.push(
+      'MASTER_KEY is required in production - without it every user API key is stored in plaintext',
+    );
+    fatal.push(
+      'Generate one with:  openssl rand -base64 32   (or the equivalent 32 random bytes, base64)',
+    );
+  }
   if (fatal.length) {
     console.error('Fatal env errors:');
     for (const msg of fatal) console.error(`  - ${msg}`);

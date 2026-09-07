@@ -27,7 +27,7 @@ Create `.env` next to `docker-compose.nas.yml`:
 CLOUDFLARE_TUNNEL_TOKEN=eyJ...            # from step 1
 CLIENT_ORIGIN=https://seo.example.com     # your public https origin, exactly
 JWT_SECRET=<32+ random bytes>             # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-MASTER_KEY=<32 random bytes, base64>      # same command; encrypts saved API keys at rest
+MASTER_KEY=<32 random bytes, base64>      # REQUIRED: encrypts every user's API keys at rest
 INITIAL_ADMIN_PASSWORD=<a real password>  # seeds the first admin on an empty database
 USERDATA_PATH=/volume1/docker/motionlinx  # a real NAS share, NOT a path inside the container
 ```
@@ -108,11 +108,16 @@ On first start with an **empty** `USERDATA_PATH`, the app copies an existing
 `./app-data` beside the source if it finds one. In a container there is none,
 so it starts clean — worth knowing if you ever bind-mount the source directory.
 
-### Without MASTER_KEY
+### MASTER_KEY is mandatory in production
 
-Saved API keys are written to disk in plaintext. The AES-256-GCM encryption is
-implemented and simply switched off until the key is present; setting it later
-triggers migration 006, which encrypts the existing rows on next boot.
+The server refuses to start without it. Each user brings their own provider
+credentials, so running without at-rest encryption would leave other people's
+API keys in plaintext on the NAS. Setting it on an existing install triggers
+migration 006, which encrypts the rows already stored.
+
+Keep it somewhere other than `USERDATA_PATH` — a key stored beside the data it
+encrypts protects nothing. Losing it means saved keys cannot be decrypted and
+must be re-entered.
 
 ---
 

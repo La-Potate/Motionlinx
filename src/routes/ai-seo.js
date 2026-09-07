@@ -1,5 +1,7 @@
 'use strict';
 
+const { upstreamAuthError, isAuthStatus } = require('../utils/http');
+const { getApiKey } = require('../services/apiKeys');
 const express = require('express');
 const cheerio = require('cheerio');
 const logger = require('../utils/logger');
@@ -230,7 +232,7 @@ router.post('/answer-ai', async (req, res) => {
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) return res.status(400).json({ error: 'Provide a valid landing page URL.' });
 
-    const serperKey = getSystemApiKey('serper');
+    const serperKey = await getApiKey(req.user.id, 'serper');
     if (!serperKey) {
       return res.status(400).json({ error: 'Serper API key not configured. Add it in settings.' });
     }
@@ -248,6 +250,7 @@ router.post('/answer-ai', async (req, res) => {
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
+        if (isAuthStatus(response.status)) throw upstreamAuthError('Serper');
         const text = await response.text();
         throw new Error(`Serper ${type} failed (${response.status}): ${text.slice(0, 200)}`);
       }
@@ -336,6 +339,11 @@ router.post('/answer-ai', async (req, res) => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Answer the AI error');
+    // A key the provider rejected is the user's to fix, so report it as such
+    // rather than as a server fault.
+    if (error?.upstreamAuth) {
+      return res.status(error.status || 400).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Failed to run Answer the AI audit.' });
   }
 });

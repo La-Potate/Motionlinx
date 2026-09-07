@@ -1,5 +1,6 @@
 'use strict';
 
+const { getApiKey } = require('../services/apiKeys');
 const express = require('express');
 const logger = require('../utils/logger');
 const authenticate = require('../middleware/authenticate');
@@ -141,7 +142,7 @@ router.post('/:id/start', tieredRateLimit('heavy'), async (req, res) => {
     if (audit.status === 'running') {
       return res.status(400).json({ error: 'Audit is already running.' });
     }
-    if (!getSystemApiKey('serper')) {
+    if (!(await getApiKey(req.user.id, 'serper'))) {
       return res.status(400).json({
         error:
           'Serper API key not configured. Please add your Serper API key in Settings to run citation audits.',
