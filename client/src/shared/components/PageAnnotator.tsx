@@ -4,7 +4,7 @@ import { Button } from '@/shared/ui/button';
 import { Textarea } from '@/shared/ui/textarea';
 import { cn } from '@/shared/lib/cn';
 
-export type Marker = {
+export type Annotation = {
   id: string;
   text: string;
   /** Fractions of the captured page, 0–1. Matches the server contract. */
@@ -14,17 +14,21 @@ export type Marker = {
 
 type Props = {
   html: string;
-  markers: Marker[];
+  annotations: Annotation[];
   saving?: boolean;
-  onSave: (markers: Marker[]) => void;
+  onSave: (annotations: Annotation[]) => void;
   /** Read-only mode for the public share view. */
   readOnly?: boolean;
+  /** What an annotation is called in this tool's copy. */
+  noun?: string;
 };
 
 const newId = () => `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 /**
- * Annotate a captured page.
+ * Annotate a captured page. Shared by Site Marker and Page Commenter, which
+ * store the same shape ({ id, text, x, y } with 0–1 fractions) under
+ * different names.
  *
  * The capture is rendered from stored HTML rather than by framing the live
  * URL. That matters for three reasons: the whole point of capturing is that
@@ -40,8 +44,8 @@ const newId = () => `m_${Date.now().toString(36)}_${Math.random().toString(36).s
  * is granted only so the content height can be measured — with scripts
  * disabled it grants no meaningful capability to the captured page.
  */
-export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }: Props) {
-  const [local, setLocal] = useState<Marker[]>(markers);
+export function PageAnnotator({ html, annotations, saving, onSave, readOnly, noun = 'marker' }: Props) {
+  const [local, setLocal] = useState<Annotation[]>(annotations);
   const [active, setActive] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -52,9 +56,9 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
   const dragRef = useRef<{ id: string } | null>(null);
 
   useEffect(() => {
-    setLocal(markers);
+    setLocal(annotations);
     setDirty(false);
-  }, [markers]);
+  }, [annotations]);
 
   // Grow the frame to its full content height so the OUTER container scrolls.
   // If the frame scrolled internally the overlay would drift out of alignment
@@ -88,7 +92,7 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
     if (!adding || readOnly) return;
     const pos = toFraction(e.clientX, e.clientY);
     if (!pos) return;
-    const marker: Marker = { id: newId(), text: '', x: +pos.x.toFixed(4), y: +pos.y.toFixed(4) };
+    const marker: Annotation = { id: newId(), text: '', x: +pos.x.toFixed(4), y: +pos.y.toFixed(4) };
     setLocal((prev) => [...prev, marker]);
     setActive(marker.id);
     setAdding(false);
@@ -123,7 +127,7 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
     };
   }, [readOnly]);
 
-  const update = (id: string, patch: Partial<Marker>) => {
+  const update = (id: string, patch: Partial<Annotation>) => {
     setLocal((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
     setDirty(true);
   };
@@ -144,7 +148,7 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
             onClick={() => setAdding((v) => !v)}
           >
             {adding ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
-            {adding ? 'Cancel' : 'Add marker'}
+            {adding ? 'Cancel' : `Add ${noun}`}
           </Button>
           <Button
             size="sm"
@@ -155,12 +159,12 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
             disabled={!dirty || saving}
           >
             <Save className="size-3.5" />
-            {saving ? 'Saving…' : dirty ? 'Save markers' : 'Saved'}
+            {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
           </Button>
           <span className="text-xs text-foreground-muted">
             {adding
-              ? 'Click anywhere on the page to drop a marker.'
-              : `${local.length} marker${local.length === 1 ? '' : 's'} · drag a pin to move it`}
+              ? `Click anywhere on the page to drop a ${noun}.`
+              : `${local.length} ${noun}${local.length === 1 ? '' : 's'} · drag a pin to move it`}
           </span>
         </div>
       )}
@@ -205,7 +209,7 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
                   ? 'border-accent bg-accent text-accent-foreground'
                   : 'border-accent bg-surface text-accent'
               )}
-              title={m.text || `Marker ${i + 1}`}
+              title={m.text || `${noun} ${i + 1}`}
             >
               <MapPin className="size-3" />
               {i + 1}
@@ -219,8 +223,8 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
         {local.length === 0 ? (
           <p className="text-xs text-foreground-muted">
             {readOnly
-              ? 'No markers on this page.'
-              : 'No markers yet. Choose “Add marker”, then click the page.'}
+              ? `No ${noun}s on this page.`
+              : `No ${noun}s yet. Choose “Add ${noun}”, then click the page.`}
           </p>
         ) : (
           local.map((m, i) => (
@@ -252,7 +256,7 @@ export function SiteMarkerAnnotator({ html, markers, saving, onSave, readOnly }:
                     size="icon-sm"
                     variant="ghost"
                     onClick={() => remove(m.id)}
-                    aria-label={`Delete marker ${i + 1}`}
+                    aria-label={`Delete ${noun} ${i + 1}`}
                   >
                     <Trash2 className="size-3.5 text-rose-ink" />
                   </Button>

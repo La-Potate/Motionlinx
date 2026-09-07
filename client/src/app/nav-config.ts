@@ -17,6 +17,7 @@ import {
   HelpCircle,
   LineChart,
   TrendingUp,
+  MessageSquare,
   type LucideIcon,
   PenSquare,
   Newspaper,
@@ -242,6 +243,20 @@ export const ALL_TOOLS: ToolEntry[] = [
       'Capture a live page exactly as it renders',
       'Drop positioned annotations anywhere on it',
       'Share a read-only link that needs no account',
+    ],
+  },
+  {
+    id: 'page-commenter',
+    label: 'Page Commenter',
+    path: '/web-search/page-commenter',
+    icon: MessageSquare,
+    section: 'Web Search',
+    description: 'Capture a page and leave positioned comments for review.',
+    keywords: ['comment', 'review', 'feedback', 'annotate', 'capture'],
+    whatItDoes: [
+      'Freeze a page with its styles inlined so it cannot drift',
+      'Drop comments anywhere on it and drag them to reposition',
+      'Download the page with the comments baked into the HTML',
     ],
   },
   {

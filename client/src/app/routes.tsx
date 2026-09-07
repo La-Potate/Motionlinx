@@ -64,6 +64,9 @@ const CitationsPage = lazy(() => import('@/features/local-business/CitationsPage
 
 // Web Search tools
 const SiteMarkerPage = lazy(() => import('@/features/web-search/SiteMarkerPage'));
+const PageCommenterPage = lazy(
+  () => import('@/features/web-search/PageCommenterPage')
+);
 const MapElementPage = lazy(() => import('@/features/web-search/MapElementPage'));
 const SchemaGeneratorPage = lazy(
   () => import('@/features/web-search/SchemaGeneratorPage')
@@ -211,6 +214,7 @@ export function AppRoutes() {
           {/* Web Search */}
           <Route path="/web-search" element={<WebSearchLanding />} />
           <Route path="/web-search/site-marker" element={<SiteMarkerPage />} />
+          <Route path="/web-search/page-commenter" element={<PageCommenterPage />} />
           <Route path="/web-search/map-element" element={<MapElementPage />} />
           <Route
             path="/web-search/schema-generator"

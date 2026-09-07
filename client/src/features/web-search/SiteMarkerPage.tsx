@@ -13,7 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import siteMarkerService from '@/shared/api/siteMarker';
-import { SiteMarkerAnnotator } from './components/SiteMarkerAnnotator';
+import { PageAnnotator } from '@/shared/components/PageAnnotator';
 import { ToolPage } from '@/shared/components/ToolPage';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Card, CardContent } from '@/shared/ui/card';
@@ -306,9 +306,9 @@ export default function SiteMarkerPage() {
                   {loadingCapture ? (
                     <Skeleton className="h-[520px] w-full" />
                   ) : capture ? (
-                    <SiteMarkerAnnotator
+                    <PageAnnotator
                       html={capture.html}
-                      markers={capture.markers}
+                      annotations={capture.markers}
                       saving={savingMarkers}
                       onSave={onSaveMarkers}
                     />

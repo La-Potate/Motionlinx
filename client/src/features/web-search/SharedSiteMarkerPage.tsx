@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ExternalLink, ShieldAlert, Globe } from 'lucide-react';
 import siteMarkerService from '@/shared/api/siteMarker';
-import { SiteMarkerAnnotator } from './components/SiteMarkerAnnotator';
+import { PageAnnotator } from '@/shared/components/PageAnnotator';
 import { Card, CardContent } from '@/shared/ui/card';
 import { Badge } from '@/shared/ui/badge';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -98,9 +98,9 @@ export default function SharedSiteMarkerPage() {
             <Card>
               <CardContent className="p-4">
                 {html ? (
-                  <SiteMarkerAnnotator
+                  <PageAnnotator
                     html={html}
-                    markers={Array.isArray(data.markers) ? data.markers : []}
+                    annotations={Array.isArray(data.markers) ? data.markers : []}
                     onSave={() => {}}
                     readOnly
                   />

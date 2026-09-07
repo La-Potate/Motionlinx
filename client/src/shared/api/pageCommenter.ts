@@ -55,12 +55,45 @@ const deletePage = async (id) => {
   return data;
 };
 
+/**
+ * Download the capture with its comments baked into the HTML.
+ *
+ * The endpoint returns a self-contained annotated page, so it goes through
+ * fetch + blob rather than a plain link: the request needs the auth header,
+ * which an <a href> cannot carry.
+ */
+const downloadPage = async (id, filename) => {
+  const response = await authenticatedFetch(`/api/page-commenter/pages/${id}/download`, {
+    method: 'GET',
+  });
+  if (!response.ok) {
+    let message = 'Failed to download page.';
+    try {
+      message = (await response.json())?.error || message;
+    } catch {
+      // response was not JSON; keep the default
+    }
+    throw new Error(message);
+  }
+  // The authenticatedFetch shim exposes text()/json() but not blob(); the
+  // payload is HTML, so text is the right read anyway.
+  const html = await response.text();
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || `page-${id}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 const pageCommenterService = {
   listPages,
   createPage,
   getPage,
   saveComments,
   deletePage,
+  downloadPage,
 };
 
 export default pageCommenterService;
