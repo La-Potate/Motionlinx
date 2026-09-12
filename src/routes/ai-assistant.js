@@ -235,8 +235,21 @@ router.post('/projects/:id/runs', async (req, res) => {
 });
 
 router.delete('/projects/:id/runs/current', async (req, res) => {
-  const ok = await cancelAnalysis(parseInt(req.params.id, 10));
-  res.json({ cancelled: ok });
+  const projectId = parseInt(req.params.id, 10);
+  try {
+    // Without this check any authenticated user could cancel another user's
+    // running analysis just by guessing the project id.
+    const project = await dbGet(`SELECT id FROM seo_projects WHERE id = ? AND user_id = ?`, [
+      projectId,
+      req.user.id,
+    ]);
+    if (!project) return res.status(404).json({ error: 'not_found' });
+    const ok = await cancelAnalysis(projectId);
+    res.json({ cancelled: ok });
+  } catch (err) {
+    logger.error({ err }, 'Cancel analysis failed');
+    res.status(500).json({ error: 'cancel_failed' });
+  }
 });
 
 router.get('/projects/:id/runs/:runId', async (req, res) => {

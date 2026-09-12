@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ACCOUNT_LOCK_MINUTES, GOOGLE_CLIENT_ID } = require('../config/env');
-const { dbGet, dbRun } = require('../utils/dbAsync');
+const { dbGet, dbRun, isUniqueViolation } = require('../utils/dbAsync');
 const { TRIAL_USER_LEVEL } = require('../utils/userLevel');
 const authenticate = require('../middleware/authenticate');
 const { ensurePlanCredits } = require('../services/credits');
@@ -70,6 +70,13 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
     if (user.auth_provider !== 'local') {
       return res.status(400).json({ error: 'Please sign in with Google' });
     }
+    // `is_active` is already enforced by the query above, but bans live in a
+    // separate table that nothing used to read — a banned user could log
+    // straight back in and carry on.
+    const ban = await dbGet('SELECT reason FROM user_bans WHERE user_id = ?', [user.id]);
+    if (ban) {
+      return res.status(403).json({ error: 'Account suspended' });
+    }
     if (isAccountLocked(user)) {
       return res.status(423).json({
         error: `Account locked for ${ACCOUNT_LOCK_MINUTES} minutes due to too many failed attempts.`,
@@ -126,7 +133,7 @@ router.post('/signup', authLimiter, validateSignup, async (req, res) => {
     });
     res.status(201).json({ message: 'Account created successfully', userId: result.lastID });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     logger.error({ err }, 'Signup error');
@@ -187,6 +194,12 @@ router.post('/refresh', authLimiter, async (req, res) => {
     if (!user) {
       await revokeRefreshToken(refreshToken);
       return res.status(401).json({ error: 'User no longer exists' });
+    }
+    // A banned user must not be able to mint a fresh access token here either.
+    const refreshBan = await dbGet('SELECT 1 FROM user_bans WHERE user_id = ?', [user.id]);
+    if (refreshBan) {
+      await revokeRefreshToken(refreshToken);
+      return res.status(403).json({ error: 'Account suspended' });
     }
 
     await revokeRefreshToken(refreshToken);

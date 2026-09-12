@@ -68,6 +68,24 @@ async function ensureTableColumns(table, definitions = []) {
   }
 }
 
+/**
+ * True when an error is a UNIQUE-constraint violation.
+ *
+ * node-sqlite3 reports the generic `SQLITE_CONSTRAINT` code and puts the
+ * specific constraint in the message — it does NOT emit the extended
+ * `SQLITE_CONSTRAINT_UNIQUE` code that several handlers used to test for.
+ * Those tests could never match, so duplicate signups surfaced as a blank
+ * HTTP 500 instead of "Username or email already exists". Both spellings are
+ * accepted here in case a future driver starts reporting the extended code.
+ */
+function isUniqueViolation(err) {
+  if (!err) return false;
+  const code = err.code || '';
+  if (code === 'SQLITE_CONSTRAINT_UNIQUE') return true;
+  if (code !== 'SQLITE_CONSTRAINT') return false;
+  return /UNIQUE constraint failed/i.test(err.message || '');
+}
+
 module.exports = {
   db,
   dbGet,
@@ -76,4 +94,5 @@ module.exports = {
   dbExec,
   withTransaction,
   ensureTableColumns,
+  isUniqueViolation,
 };

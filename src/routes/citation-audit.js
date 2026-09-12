@@ -166,6 +166,17 @@ router.post('/:id/start', tieredRateLimit('heavy'), async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    // Ownership MUST be confirmed before anything destructive runs. The child
+    // rows are keyed only by audit_id, so deleting them without this check let
+    // any authenticated user wipe another user's audit results by guessing an
+    // id — the parent row survived (it is user-scoped) and the audit silently
+    // became empty. Same for abortAudit, which would stop someone else's run.
+    const audit = await dbGet('SELECT id FROM citation_audits WHERE id = ? AND user_id = ?', [
+      req.params.id,
+      req.user.id,
+    ]);
+    if (!audit) return res.status(404).json({ error: 'Audit not found' });
+
     await abortAudit(req.params.id);
     await dbRun('DELETE FROM citation_audit_results WHERE audit_id = ?', [req.params.id]);
     await dbRun('DELETE FROM citation_audits WHERE id = ? AND user_id = ?', [

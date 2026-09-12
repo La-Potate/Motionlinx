@@ -4,7 +4,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
-const { dbGet, dbAll, dbRun } = require('../utils/dbAsync');
+const { dbGet, dbAll, dbRun, isUniqueViolation } = require('../utils/dbAsync');
 const { USER_LEVEL_SET, DEFAULT_USER_LEVEL } = require('../utils/userLevel');
 const { getPlanForRole, applyCreditChange } = require('../services/credits');
 const authenticate = require('../middleware/authenticate');
@@ -20,11 +20,43 @@ const router = express.Router();
 // All admin endpoints require auth + admin role.
 router.use(authenticate, requireAdmin);
 
+const MAX_CREDITS = 10000000;
+
 const validateAdminSignup = [
   body('username').trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
 ];
+
+/**
+ * Guard against an admin locking everybody — including themselves — out.
+ *
+ * Self-demotion was already blocked, but deactivating, banning or deleting
+ * your own account was not, and each of those now takes effect immediately
+ * because `authenticate` re-checks account state on every request. Deleting
+ * the last admin is unrecoverable through the API: the bootstrap migration
+ * that seeds an admin only runs once, on a fresh database.
+ *
+ * Returns an error string to send back, or null when the action is safe.
+ */
+async function lockoutGuard(req, targetId, action) {
+  if (Number(targetId) === Number(req.user.id)) {
+    return `Cannot ${action} your own account`;
+  }
+  const target = await dbGet('SELECT role, is_active FROM users WHERE id = ?', [targetId]);
+  if (!target || target.role !== 'admin' || !target.is_active) return null;
+
+  const remaining = await dbGet(
+    `SELECT COUNT(*) AS count FROM users u
+      WHERE u.role = 'admin' AND u.is_active = 1 AND u.id != ?
+        AND NOT EXISTS (SELECT 1 FROM user_bans b WHERE b.user_id = u.id)`,
+    [targetId],
+  );
+  if (!remaining || remaining.count === 0) {
+    return `Cannot ${action} the last remaining admin`;
+  }
+  return null;
+}
 
 // Users CRUD
 router.get('/users', async (req, res) => {
@@ -96,7 +128,7 @@ router.post('/users', validateAdminSignup, async (req, res) => {
     }
     res.json({ message: 'User created successfully', userId: result.lastID });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     logger.error({ err }, 'Error creating user');
@@ -124,6 +156,17 @@ router.put('/users/:id', async (req, res) => {
     if (Number(userId) === Number(req.user.id) && existing.role === 'admin' && role && role !== 'admin') {
       return res.status(400).json({ error: 'Cannot change your own admin role' });
     }
+    // Deactivating an account now logs it out on the next request, so the
+    // same self-lockout rule that covers role changes has to cover this too.
+    const deactivating = is_active !== undefined && !Number(is_active);
+    if (deactivating) {
+      const blocked = await lockoutGuard(req, userId, 'deactivate');
+      if (blocked) return res.status(400).json({ error: blocked });
+    }
+    if (role && role !== 'admin' && existing.role === 'admin') {
+      const blocked = await lockoutGuard(req, userId, 'demote');
+      if (blocked) return res.status(400).json({ error: blocked });
+    }
     let normalizedRole = existing.role;
     if (role !== undefined && role !== null) {
       const candidate = role.toString().trim().toLowerCase();
@@ -132,11 +175,41 @@ router.put('/users/:id', async (req, res) => {
       }
       normalizedRole = candidate;
     }
+    // SQLite is dynamically typed, so an unvalidated value is stored verbatim:
+    // `credits: "abc"` used to land in the column as a string, and every later
+    // balance check reads it as `typeof !== 'number'` and treats the account as
+    // having zero credits — a silent lockout from every paid feature. Same for
+    // `is_active`, where a null would deactivate the account outright.
+    let nextCredits = existing.credits;
+    if (credits !== undefined) {
+      const parsed = Number(credits);
+      if (credits === null || typeof credits === 'object' || !Number.isFinite(parsed) || parsed < 0) {
+        return res.status(400).json({ error: 'Credits must be a non-negative number' });
+      }
+      // Ceiling keeps the balance inside the exact-integer range. The largest
+      // plan grants 10,000/month, so this is far above any legitimate grant
+      // while stopping a value like 1e308 from poisoning later arithmetic.
+      if (parsed > MAX_CREDITS) {
+        return res.status(400).json({ error: `Credits cannot exceed ${MAX_CREDITS}` });
+      }
+      nextCredits = Math.floor(parsed);
+    }
+
+    let nextActive = existing.is_active;
+    if (is_active !== undefined) {
+      if (typeof is_active === 'boolean') nextActive = is_active ? 1 : 0;
+      else if (is_active === 0 || is_active === 1 || is_active === '0' || is_active === '1') {
+        nextActive = Number(is_active);
+      } else {
+        return res.status(400).json({ error: 'is_active must be a boolean' });
+      }
+    }
+
     const next = {
       username: username !== undefined ? username : existing.username,
       email: email !== undefined ? email : existing.email,
-      is_active: is_active !== undefined ? is_active : existing.is_active,
-      credits: credits !== undefined ? credits : existing.credits,
+      is_active: nextActive,
+      credits: nextCredits,
     };
 
     const result = await dbRun(
@@ -161,7 +234,7 @@ router.put('/users/:id', async (req, res) => {
     });
     res.json({ message: 'User updated successfully' });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     logger.error({ err }, 'Error updating user');
@@ -207,6 +280,11 @@ router.post('/users/:id/credits', async (req, res) => {
 router.delete('/users/:id', async (req, res) => {
   const userId = req.params.id;
   try {
+    // Deleting yourself or the last admin cannot be undone through the API —
+    // the admin-bootstrap migration only seeds an account on a fresh database.
+    const blocked = await lockoutGuard(req, userId, 'delete');
+    if (blocked) return res.status(400).json({ error: blocked });
+
     const result = await dbRun('DELETE FROM users WHERE id = ?', [userId]);
     if (!result.changes) return res.status(404).json({ error: 'User not found' });
     archiveUserDir(userId);
@@ -225,10 +303,24 @@ router.post('/users/:id/ban', async (req, res) => {
   if (!reason) return res.status(400).json({ error: 'Ban reason is required' });
 
   try {
+    // A ban is enforced on the very next request, so banning yourself (or the
+    // last admin) locks the install out of its own admin panel.
+    const blocked = await lockoutGuard(req, userId, 'ban');
+    if (blocked) return res.status(400).json({ error: blocked });
+
+    const target = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const alreadyBanned = await dbGet('SELECT 1 FROM user_bans WHERE user_id = ?', [userId]);
+    if (alreadyBanned) return res.status(409).json({ error: 'User is already banned' });
+
     await dbRun(
       'INSERT INTO user_bans (user_id, reason, banned_by) VALUES (?, ?, ?)',
       [userId, reason, bannedBy],
     );
+    // Drop existing sessions so the ban takes effect now. `authenticate`
+    // already rejects banned accounts on every request, but revoking the
+    // refresh tokens stops the client silently re-minting a session.
+    await dbRun('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
     writeUserSettingsToDisk(userId, {
       status: { banned: true, banReason: reason, bannedAt: new Date().toISOString(), bannedBy },
     });
@@ -266,7 +358,7 @@ router.post('/ban-ip', async (req, res) => {
     );
     res.json({ message: 'IP address banned successfully' });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return res.status(400).json({ error: 'IP address is already banned' });
     }
     logger.error({ err }, 'Error banning IP');

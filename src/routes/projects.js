@@ -83,6 +83,15 @@ router.delete('/projects/:id', authenticate, async (req, res) => {
 // ---- Groups ----
 router.get('/projects/:projectId/groups', authenticate, async (req, res) => {
   try {
+    // The group query below is already user-scoped, so an unowned project can
+    // never leak rows — but it returned `200 []`, which the client renders as
+    // an empty board rather than "not found". 404 matches PUT/DELETE here.
+    const project = await dbGet('SELECT id FROM projects WHERE id = ? AND user_id = ?', [
+      req.params.projectId,
+      req.user.id,
+    ]);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
     const groups = await dbAll(
       `SELECT g.* FROM groups g
        JOIN projects p ON g.project_id = p.id
@@ -152,6 +161,14 @@ router.delete('/groups/:id', authenticate, async (req, res) => {
 // ---- Tasks ----
 router.get('/groups/:groupId/tasks', authenticate, async (req, res) => {
   try {
+    const group = await dbGet(
+      `SELECT g.id FROM groups g
+       JOIN projects p ON g.project_id = p.id
+       WHERE g.id = ? AND p.user_id = ?`,
+      [req.params.groupId, req.user.id],
+    );
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
     const tasks = await dbAll(
       `SELECT t.* FROM tasks t
        JOIN groups g ON t.group_id = g.id

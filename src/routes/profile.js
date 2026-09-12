@@ -3,23 +3,68 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const logger = require('../utils/logger');
-const { dbGet, dbRun, dbAll } = require('../utils/dbAsync');
+const { dbGet, dbRun, dbAll, isUniqueViolation } = require('../utils/dbAsync');
 const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
 
+// Mirrors the signup rules in routes/auth.js so an account cannot be edited
+// into a state it could never have been created in.
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 64;
+const EMAIL_MAX = 254;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 router.put('/', authenticate, async (req, res) => {
   const userId = req.user.id;
-  const { username, email } = req.body;
+  const body = req.body || {};
+
+  // Only apply the fields actually supplied, so changing just the email does
+  // not blank the username. Previously both were written unconditionally:
+  // a partial update bound `undefined` and failed with a bare 500, while an
+  // empty string was accepted and could erase the account's login identity.
+  const updates = [];
+  const params = [];
+
+  if (body.username !== undefined) {
+    if (typeof body.username !== 'string') {
+      return res.status(400).json({ error: 'Username must be a string' });
+    }
+    const username = body.username.trim();
+    if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) {
+      return res
+        .status(400)
+        .json({ error: `Username must be between ${USERNAME_MIN} and ${USERNAME_MAX} characters` });
+    }
+    updates.push('username = ?');
+    params.push(username);
+  }
+
+  if (body.email !== undefined) {
+    if (typeof body.email !== 'string') {
+      return res.status(400).json({ error: 'Email must be a string' });
+    }
+    const email = body.email.trim();
+    if (email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: 'Valid email required' });
+    }
+    updates.push('email = ?');
+    params.push(email);
+  }
+
+  if (!updates.length) {
+    return res.status(400).json({ error: 'Nothing to update — supply username and/or email' });
+  }
 
   try {
+    params.push(userId);
     await dbRun(
-      'UPDATE users SET username = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [username, email, userId],
+      `UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      params,
     );
     res.json({ message: 'Profile updated successfully' });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isUniqueViolation(err)) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     logger.error({ err }, 'Error updating profile');
