@@ -128,7 +128,7 @@ router.post('/serper-search', heavyLimit, async (req, res) => {
     if (!effectiveKey) {
       return res.status(400).json({
         success: false,
-        error: 'Serper API key not configured. Please ask an administrator to connect it.',
+        error: 'Serper API key is missing. Add yours in Settings → Saved APIs.',
       });
     }
 
@@ -220,7 +220,7 @@ router.post('/serper-reviews', heavyLimit, async (req, res) => {
     if (!effectiveKey) {
       return res.status(400).json({
         success: false,
-        error: 'Serper API key not configured. Please ask an administrator to connect it.',
+        error: 'Serper API key is missing. Add yours in Settings → Saved APIs.',
       });
     }
 

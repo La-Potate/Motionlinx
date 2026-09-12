@@ -45,7 +45,7 @@ router.post('/press-release', claudeLimit, async (req, res) => {
     const { website, author, service } = req.body || {};
     const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
-      return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
+      return res.status(503).json({ error: 'Anthropic API key is missing. Add yours in Settings → Saved APIs.' });
     }
     const safeWebsite = String(website || '').trim();
     const safeAuthor = String(author || '').trim();
@@ -165,10 +165,14 @@ router.put('/press-release/:id', async (req, res) => {
 
 router.delete('/press-release/:id', async (req, res) => {
   try {
-    await dbRun('DELETE FROM press_releases WHERE id = ? AND user_id = ?', [
+    // The row is user-scoped, so another user's content is never deleted --
+    // but reporting success when nothing matched told the client the delete
+    // worked and made the item disappear from the UI regardless.
+    const result = await dbRun('DELETE FROM press_releases WHERE id = ? AND user_id = ?', [
       req.params.id,
       req.user.id,
     ]);
+    if (!result.changes) return res.status(404).json({ error: 'Press release not found.' });
     res.json({ success: true });
   } catch (err) {
     logger.error({ err }, 'Press release delete failed');
@@ -182,7 +186,7 @@ router.post('/blog-post', claudeLimit, async (req, res) => {
     const { website, wordCount, topic } = req.body || {};
     const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
-      return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
+      return res.status(503).json({ error: 'Anthropic API key is missing. Add yours in Settings → Saved APIs.' });
     }
     const safeWebsite = String(website || '').trim();
     const safeTopic = String(topic || '').trim();
@@ -310,10 +314,14 @@ router.put('/blog-post/:id', async (req, res) => {
 
 router.delete('/blog-post/:id', async (req, res) => {
   try {
-    await dbRun('DELETE FROM blog_posts WHERE id = ? AND user_id = ?', [
+    // The row is user-scoped, so another user's content is never deleted --
+    // but reporting success when nothing matched told the client the delete
+    // worked and made the item disappear from the UI regardless.
+    const result = await dbRun('DELETE FROM blog_posts WHERE id = ? AND user_id = ?', [
       req.params.id,
       req.user.id,
     ]);
+    if (!result.changes) return res.status(404).json({ error: 'Blog post not found.' });
     res.json({ success: true });
   } catch (err) {
     logger.error({ err }, 'Blog post delete failed');
@@ -327,7 +335,7 @@ router.post('/beyond-intent/generate', claudeLimit, async (req, res) => {
     const { systemPrompt, userPrompt } = req.body || {};
     const claudeKey = await pickClaudeKey(req.user.id);
     if (!claudeKey) {
-      return res.status(503).json({ error: 'Claude API is not configured by the administrator.' });
+      return res.status(503).json({ error: 'Anthropic API key is missing. Add yours in Settings → Saved APIs.' });
     }
     if (!systemPrompt || !userPrompt) {
       return res.status(400).json({ error: 'Both systemPrompt and userPrompt are required.' });
