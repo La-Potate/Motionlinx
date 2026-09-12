@@ -2,7 +2,7 @@
 
 const logger = require('../utils/logger');
 const { dbAll } = require('../utils/dbAsync');
-const { readUserSettingsFromDisk } = require('../storage/userSettings');
+const { readUserApiKeysFromDisk } = require('../storage/userSettings');
 const { decryptSecret } = require('../utils/crypto');
 const { ensureFetch } = require('../utils/smartFetch');
 
@@ -34,8 +34,8 @@ async function getUserGooglePlacesKey(userId) {
   } catch (err) {
     logger.warn({ err }, 'getUserGooglePlacesKey DB lookup failed; falling back to disk');
   }
-  const disk = readUserSettingsFromDisk(userId);
-  return disk?.apiKeys?.googlePlaces || disk?.apiKeys?.googleApiKey || '';
+  const disk = readUserApiKeysFromDisk(userId);
+  return disk.googlePlaces || disk.googleApiKey || '';
 }
 
 async function placesTextSearch({ query, lat, lng, radius, apiKey }) {

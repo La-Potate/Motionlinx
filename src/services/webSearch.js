@@ -6,7 +6,8 @@ const { db } = require('../utils/dbAsync');
 const { delay, normalizeUrl } = require('../utils/url');
 const { decodeHtmlEntities, stripTags, toAbsolute } = require('../utils/htmlScrape');
 const { ensureFetch, fetchWithSmartAgent } = require('../utils/smartFetch');
-const { readSystemSettings } = require('../storage/systemSettings');
+const { getSystemApiKey } = require('../storage/systemSettings');
+const { decryptSecret } = require('../utils/crypto');
 const { BUSINESS_AUDIT_USER_AGENT: MAP_SCRAPER_USER_AGENT, SCHEMA_AUTOFILL_USER_AGENT: AUTOFILL_USER_AGENT } =
   require('../config/env');
 
@@ -59,8 +60,6 @@ const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 
 // ---- Admin Google keys lookup ----
 const getAdminGoogleKeys = async () => {
-  const systemSettings = readSystemSettings();
-  const systemApiKeys = systemSettings.apiKeys || {};
   const adminKeys = await new Promise((resolve) => {
     db.all(
       `SELECT us.setting_key, us.setting_value
@@ -77,20 +76,23 @@ const getAdminGoogleKeys = async () => {
         }
         const mapped = {};
         rows.forEach((row) => {
-          mapped[row.setting_key] = row.setting_value || '';
+          // These rows are encrypted at rest; reading them raw handed the
+          // Google endpoints an `enc:v1:...` blob instead of a key.
+          mapped[row.setting_key] = decryptSecret(row.setting_value) || '';
         });
         resolve(mapped);
       },
     );
   });
 
+  // getSystemApiKey decrypts; reading settings.apiKeys directly did not.
   const apiKey =
     adminKeys.googlePlaces_api_key ||
     adminKeys.google_api_key ||
-    systemApiKeys.googlePlaces ||
-    systemApiKeys.googleApiKey ||
+    getSystemApiKey('googlePlaces') ||
+    getSystemApiKey('googleApiKey') ||
     '';
-  const cx = adminKeys.google_cx || systemApiKeys.googleCx || '';
+  const cx = adminKeys.google_cx || getSystemApiKey('googleCx') || '';
   return { apiKey, cx };
 };
 

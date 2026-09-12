@@ -3,7 +3,7 @@
 const logger = require('../utils/logger');
 const { dbAll } = require('../utils/dbAsync');
 const { decryptSecret } = require('../utils/crypto');
-const { readUserSettingsFromDisk } = require('../storage/userSettings');
+const { readUserApiKeysFromDisk } = require('../storage/userSettings');
 const { getSystemApiKey } = require('../storage/systemSettings');
 const env = require('../config/env');
 
@@ -118,10 +118,11 @@ async function resolveApiKey(userId, service) {
     if (userKeys[key]) return { value: userKeys[key], source: 'user' };
   }
 
-  const disk = readUserSettingsFromDisk(userId);
+  // The legacy disk mirror is written encrypted now; readUserApiKeysFromDisk
+  // decrypts, and is a no-op on values that predate that change.
+  const disk = readUserApiKeysFromDisk(userId);
   for (const key of def.diskKeys) {
-    const v = disk?.apiKeys?.[key];
-    if (v) return { value: v, source: 'user' };
+    if (disk[key]) return { value: disk[key], source: 'user' };
   }
 
   if (def.systemKey) {

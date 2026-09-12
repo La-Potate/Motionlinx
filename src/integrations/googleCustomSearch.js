@@ -1,7 +1,7 @@
 'use strict';
 
 const { dbAll } = require('../utils/dbAsync');
-const { readUserSettingsFromDisk } = require('../storage/userSettings');
+const { readUserApiKeysFromDisk } = require('../storage/userSettings');
 const { decryptSecret } = require('../utils/crypto');
 const { ensureFetch } = require('../utils/smartFetch');
 
@@ -28,11 +28,9 @@ async function getUserGoogleSearchConfig(userId) {
     }
   });
   if (!apiKey || !cx) {
-    const disk = readUserSettingsFromDisk(userId);
-    if (disk?.apiKeys) {
-      if (!apiKey && disk.apiKeys.googleApiKey) apiKey = disk.apiKeys.googleApiKey;
-      if (!cx && disk.apiKeys.googleCx) cx = disk.apiKeys.googleCx;
-    }
+    const disk = readUserApiKeysFromDisk(userId);
+    if (!apiKey && disk.googleApiKey) apiKey = disk.googleApiKey;
+    if (!cx && disk.googleCx) cx = disk.googleCx;
   }
   return { apiKey: apiKey || null, cx: cx || null };
 }

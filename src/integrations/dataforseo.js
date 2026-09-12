@@ -3,7 +3,7 @@
 const logger = require('../utils/logger');
 const { ensureFetch } = require('./claude');
 const { db } = require('../utils/dbAsync');
-const { readUserSettingsFromDisk } = require('../storage/userSettings');
+const { readUserApiKeysFromDisk } = require('../storage/userSettings');
 const { decryptSecret } = require('../utils/crypto');
 const { DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD } = require('../config/env');
 
@@ -247,8 +247,7 @@ const getUserDataForSeoCredentials = async (userId) => {
       },
     );
   });
-  const diskSettings = readUserSettingsFromDisk(userId);
-  const diskKeys = (diskSettings && diskSettings.apiKeys) || {};
+  const diskKeys = readUserApiKeysFromDisk(userId);
   let login = dbKeys.dataForSeo_login || diskKeys.dataForSeoLogin || '';
   let password = dbKeys.dataForSeo_password || diskKeys.dataForSeoPassword || '';
   const legacy = dbKeys.dataForSeo_api_key || diskKeys.dataForSeo || '';
@@ -273,7 +272,13 @@ const getUserDataForSeoCredentials = async (userId) => {
         (_err, rows = []) => {
           const mapped = {};
           rows.forEach((row) => {
-            mapped[row.setting_key] = row.setting_value || '';
+            // These rows are encrypted at rest exactly like the user's own,
+            // and this branch was the one place that forgot to decrypt them.
+            // Every member falling back to the workspace DataForSEO creds was
+            // handed a raw `enc:v1:...` blob as their login and password, so
+            // keyword volume, competitors, backlinks and organic traffic all
+            // failed with an opaque provider auth error.
+            mapped[row.setting_key] = decryptSecret(row.setting_value) || '';
           });
           resolve(mapped);
         },

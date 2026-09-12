@@ -195,7 +195,14 @@ router.post('/api-keys', async (req, res) => {
     const assignUserSetting = (key, value, diskKey) => {
       const sanitized = typeof value === 'string' ? value.trim() : '';
       userUpdates.push({ key, value: sanitized });
-      if (diskKey) diskPayload.apiKeys[diskKey] = sanitized;
+      if (diskKey) {
+        // The database row is encrypted by upsertUserSetting, but this disk
+        // mirror was being written in the clear — so every user's provider
+        // keys sat as plaintext in USERDATA_PATH/users/<id>/settings.json,
+        // where a backup or filesystem read exposed them and MASTER_KEY
+        // protected nothing. Encrypt here too; readers decrypt on the way out.
+        diskPayload.apiKeys[diskKey] = sanitized ? encryptSecret(sanitized) : '';
+      }
       return sanitized;
     };
 

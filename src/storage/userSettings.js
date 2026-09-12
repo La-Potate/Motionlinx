@@ -5,6 +5,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const mergeDeep = require('../utils/mergeDeep');
 const { ensureDir, USER_FILES_ROOT } = require('./paths');
+const { decryptSecret } = require('../utils/crypto');
 
 function getUserDir(userId) {
   return path.join(USER_FILES_ROOT, String(userId));
@@ -53,6 +54,28 @@ function readUserSettingsFromDisk(userId) {
   }
 }
 
+/**
+ * The `apiKeys` block from a user's settings.json, decrypted.
+ *
+ * This file is a legacy mirror of the `user_settings` table and is consulted
+ * only when the database has no value. Its secrets used to be written in the
+ * clear while the database rows were encrypted, so anyone reading the data
+ * volume or a backup could lift every user's provider keys. They are encrypted
+ * on write now, and every read goes through here.
+ *
+ * decryptSecret passes plaintext through untouched, so files written before
+ * that change keep working and upgrade themselves the next time they are saved.
+ */
+function readUserApiKeysFromDisk(userId) {
+  const disk = readUserSettingsFromDisk(userId);
+  const raw = disk && typeof disk.apiKeys === 'object' && disk.apiKeys ? disk.apiKeys : {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    out[key] = typeof value === 'string' ? decryptSecret(value) || '' : value;
+  }
+  return out;
+}
+
 function writeUserSettingsToDisk(userId, payload) {
   if (userId === undefined || userId === null) return;
   try {
@@ -93,6 +116,7 @@ module.exports = {
   getUserDir,
   ensureUserDir,
   readUserSettingsFromDisk,
+  readUserApiKeysFromDisk,
   writeUserSettingsToDisk,
   archiveUserDir,
 };

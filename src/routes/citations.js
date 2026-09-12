@@ -364,7 +364,7 @@ router.get('/list', (req, res) => {
 // ---- Fetch business details from Google Maps URL ----
 // Used by the citation-audit "import from map link" flow.
 const { ensureFetch } = require('../utils/smartFetch');
-const { readUserSettingsFromDisk } = require('../storage/userSettings');
+const { readUserApiKeysFromDisk } = require('../storage/userSettings');
 const { decryptSecret } = require('../utils/crypto');
 
 async function resolveGooglePlacesKey(userId) {
@@ -377,8 +377,7 @@ async function resolveGooglePlacesKey(userId) {
     const decrypted = decryptSecret(row.setting_value);
     if (decrypted) return decrypted;
   }
-  const disk = readUserSettingsFromDisk(userId);
-  return disk?.apiKeys?.googlePlaces || '';
+  return readUserApiKeysFromDisk(userId).googlePlaces || '';
 }
 
 router.post('/fetch-from-map', async (req, res) => {
