@@ -108,6 +108,24 @@ On first start with an **empty** `USERDATA_PATH`, the app copies an existing
 `./app-data` beside the source if it finds one. In a container there is none,
 so it starts clean — worth knowing if you ever bind-mount the source directory.
 
+### The server will not fetch private addresses
+
+Page capture, the crawler, bulk HTTP checks and schema autofill all fetch a
+URL the user typed, on the server, and hand the result back. On a NAS that
+server sits on your LAN, so those requests are blocked unless they resolve to
+a public internet address — loopback, `10.x`, `172.16–31.x`, `192.168.x`,
+link-local `169.254.x` (cloud metadata) and their IPv6 equivalents all refuse
+with a 400 explaining why.
+
+Without this, any account on your install could read the UGREEN admin panel,
+reach sibling containers, call this app's own API over loopback, and use bulk
+HTTP as a LAN port scanner. Enforcement is at connect time, so a public
+hostname that redirects to `127.0.0.1` is stopped at the redirect, and the
+Playwright capture path filters its own requests as well.
+
+Set `ALLOW_PRIVATE_URL_FETCH=1` only if you intend to audit internal sites,
+and only on an install whose users you trust with your LAN.
+
 ### MASTER_KEY is mandatory in production
 
 The server refuses to start without it. Each user brings their own provider

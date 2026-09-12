@@ -22,6 +22,8 @@ const {
   discoverSitemap,
 } = require('../services/webSearch');
 
+const { assertPublicUrl } = require('../utils/ssrfGuard');
+
 const router = express.Router();
 router.use(authenticate);
 // Every route here either crawls or fans out to bulk APIs — heavy tier.
@@ -40,6 +42,9 @@ router.post('/spider-web', async (req, res) => {
     if (!normalized) return res.status(400).json({ error: 'Enter a valid domain or URL.' });
     const urlObj = new URL(normalized);
     const startUrl = `${urlObj.origin}/`;
+    // Crawling is a server-side fetch of a user-supplied host; keep it on the
+    // public internet so it cannot be pointed at the LAN or at loopback.
+    assertPublicUrl(startUrl);
     const limit = Math.max(10, Math.min(parseInt(crawlLimit, 10) || 200, 10000));
 
     const { nodes, processed } = await crawlInternalGraph({
@@ -52,6 +57,10 @@ router.post('/spider-web', async (req, res) => {
 
     res.json({ nodes, count: nodes.length, processed });
   } catch (error) {
+    // A blocked target is the caller's mistake, not a server fault.
+    if (error?.code === 'ERR_SSRF_BLOCKED') {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error({ err: error }, 'Spider web crawl error');
     res.status(500).json({ error: 'Failed to crawl internal links.' });
   }

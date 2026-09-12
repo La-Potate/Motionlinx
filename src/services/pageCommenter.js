@@ -3,6 +3,7 @@
 const cheerio = require('cheerio');
 const logger = require('../utils/logger');
 const { normalizeUrl } = require('../utils/url');
+const { assertPublicUrl } = require('../utils/ssrfGuard');
 const { fetchWithSmartAgent } = require('../utils/smartFetch');
 const { BUSINESS_AUDIT_USER_AGENT } = require('../config/env');
 const {
@@ -139,6 +140,20 @@ async function renderPageWithBrowser(url) {
           viewport: { width: 1400, height: 900 },
           bypassCSP: true,
         });
+        // Playwright drives Chromium's own network stack, so the undici
+        // connector in utils/smartFetch.js does not apply here. Filter every
+        // request the page makes — the initial navigation, each redirect hop,
+        // and every subresource — so the browser cannot be steered onto
+        // loopback or the LAN either.
+        // eslint-disable-next-line no-await-in-loop
+        await context.route('**/*', (route) => {
+          try {
+            assertPublicUrl(route.request().url());
+            route.continue();
+          } catch {
+            route.abort();
+          }
+        });
         // eslint-disable-next-line no-await-in-loop
         const page = await context.newPage();
         // eslint-disable-next-line no-await-in-loop
@@ -186,6 +201,9 @@ async function fetchPageCommentHtml(url) {
     err.status = 400;
     throw err;
   }
+  // The connector blocks this anyway, but only as an opaque socket failure.
+  // Checking here turns "Failed to fetch page" into a 400 that says why.
+  assertPublicUrl(normalizedUrl);
 
   const headersBase = {
     accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

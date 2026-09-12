@@ -31,6 +31,12 @@ const envSchema = z.object({
   // address to slip past rate limits and bans.
   TRUST_PROXY: z.string().optional().default(''),
 
+  // Server-side fetching of user-supplied URLs (page capture, crawler, bulk
+  // HTTP checks, schema autofill) is restricted to public internet addresses.
+  // Set to 1 only if this install genuinely needs to audit internal sites --
+  // it re-opens loopback, LAN and link-local metadata to any signed-in user.
+  ALLOW_PRIVATE_URL_FETCH: z.string().optional().default(''),
+
   // Storage
   USERDATA_PATH: z.string().optional(),
   LEGACY_USERDATA_PATH: z.string().optional(),
@@ -149,6 +155,7 @@ module.exports = {
   INITIAL_ADMIN_PASSWORD: env.INITIAL_ADMIN_PASSWORD,
   CLIENT_ORIGIN: env.CLIENT_ORIGIN,
   TRUST_PROXY: env.TRUST_PROXY,
+  ALLOW_PRIVATE_URL_FETCH: env.ALLOW_PRIVATE_URL_FETCH,
   USERDATA_PATH: env.USERDATA_PATH,
   LEGACY_USERDATA_PATH: env.LEGACY_USERDATA_PATH,
   GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,

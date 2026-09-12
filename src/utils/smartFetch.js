@@ -1,8 +1,10 @@
 'use strict';
 
 const https = require('https');
-const { Agent: UndiciAgent } = require('undici');
+const undici = require('undici');
+const { Agent: UndiciAgent, setGlobalDispatcher } = undici;
 const logger = require('./logger');
+const { guardedLookup, buildGuardedConnector } = require('./ssrfGuard');
 
 // Node 20+ has native global fetch (undici under the hood). `package.json#engines`
 // enforces Node >=20, so we can rely on it unconditionally and drop the
@@ -22,9 +24,23 @@ const cachedFetch = globalThis.fetch.bind(globalThis);
 // any caller still using non-fetch network code, but the smart-fetch retry path
 // drives undici via dispatcher.
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
-const insecureDispatcher = new UndiciAgent({
-  connect: { rejectUnauthorized: false },
+
+// Every outbound socket resolves through guardedLookup, so a user-supplied URL
+// cannot reach loopback, the LAN, or link-local metadata — and neither can a
+// redirect hop or a rebound DNS answer, since each opens a fresh connection
+// through this same dispatcher. See utils/ssrfGuard.js.
+const guardedDispatcher = new UndiciAgent({
+  connect: buildGuardedConnector(undici, { lookup: guardedLookup }),
 });
+const insecureDispatcher = new UndiciAgent({
+  connect: buildGuardedConnector(undici, {
+    rejectUnauthorized: false,
+    lookup: guardedLookup,
+  }),
+});
+
+// Applies to bare `fetch()` too, which is what ensureFetch() hands back.
+setGlobalDispatcher(guardedDispatcher);
 
 const TLS_ERROR_CODES = new Set([
   'SELF_SIGNED_CERT_IN_CHAIN',
@@ -138,6 +154,7 @@ async function fetchWithSmartAgent(url, options = {}) {
 
 module.exports = {
   ensureFetch,
+  guardedDispatcher,
   fetchWithSmartAgent,
   isTlsRetryableError,
   isNetworkRetryableError,

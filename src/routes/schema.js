@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const authenticate = require('../middleware/authenticate');
 const { tieredRateLimit } = require('../middleware/rateLimits');
 const { normalizeUrl } = require('../utils/url');
+const { assertPublicUrl } = require('../utils/ssrfGuard');
 const { fetchWithSmartAgent } = require('../utils/smartFetch');
 const { SCHEMA_AUTOFILL_USER_AGENT: AUTOFILL_USER_AGENT } = require('../config/env');
 const { fetchSerperReviews } = require('../integrations/serper');
@@ -31,6 +32,7 @@ const heavyLimit = tieredRateLimit('heavy');
       if (!normalized) {
         return res.status(400).json({ error: 'Provide a valid URL (including http/https).' });
       }
+      assertPublicUrl(normalized);
       const normalizedMap = mapUrl ? normalizeUrl(mapUrl) : null;
 
       const crawlAndExtract = async () => {
@@ -157,6 +159,9 @@ const heavyLimit = tieredRateLimit('heavy');
 
       res.json(payload);
     } catch (error) {
+      if (error?.code === 'ERR_SSRF_BLOCKED') {
+        return res.status(400).json({ error: error.message });
+      }
       logger.error({ err: error }, 'Schema autofill error');
       res.status(500).json({ error: 'Failed to crawl the requested URL.' });
     }
