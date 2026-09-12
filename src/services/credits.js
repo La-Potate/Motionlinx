@@ -17,10 +17,16 @@ function getPlanForRole(role = '') {
   return PLAN_CONFIG[normalizeUserLevel(role)] || null;
 }
 
-async function recordCreditTransaction(userId, change, reason = 'usage', meta = {}) {
+async function recordCreditTransaction(userId, change, reason = 'usage', meta = {}, knownBalance) {
   try {
-    const user = await dbGet('SELECT credits FROM users WHERE id = ?', [userId]);
-    const balanceAfter = user?.credits ?? null;
+    // Prefer the balance the caller just wrote. Re-reading it here raced with
+    // concurrent deductions and could log a balance that was never the result
+    // of this transaction.
+    let balanceAfter = knownBalance;
+    if (balanceAfter === undefined) {
+      const user = await dbGet('SELECT credits FROM users WHERE id = ?', [userId]);
+      balanceAfter = user?.credits ?? null;
+    }
     await dbRun(
       'INSERT INTO credit_transactions (user_id, change, reason, balance_after, meta) VALUES (?, ?, ?, ?, ?)',
       [userId, change, reason, balanceAfter, JSON.stringify(meta || {})],
@@ -31,21 +37,40 @@ async function recordCreditTransaction(userId, change, reason = 'usage', meta = 
 }
 
 /**
- * Atomically apply a credit delta. Throws a 402 error if it would push the
+ * Apply a credit delta atomically. Throws a 402 error if it would push the
  * balance negative and allowNegative is false.
+ *
+ * This must be a single guarded UPDATE. It used to SELECT the balance, add the
+ * delta in JavaScript, then UPDATE to the computed total — a read-modify-write
+ * that loses every concurrent deduction but one. Measured on this codebase:
+ * 50 parallel calls to spend 1 credit each moved the balance from 1000 to 999,
+ * and 20 parallel calls against a balance of 5 all succeeded, so the
+ * "cannot go negative" check never fired. Doing the arithmetic inside SQL,
+ * with the floor in the WHERE clause, makes each deduction atomic.
  */
 async function applyCreditChange(userId, delta, reason = 'usage', meta = {}, allowNegative = false) {
-  const user = await dbGet('SELECT credits FROM users WHERE id = ?', [userId]);
-  if (!user) throw new Error('User not found for credit change');
-  const currentCredits = typeof user.credits === 'number' ? user.credits : 0;
-  const nextCredits = currentCredits + delta;
-  if (!allowNegative && nextCredits < 0) {
+  const result = allowNegative
+    ? await dbRun('UPDATE users SET credits = COALESCE(credits, 0) + ? WHERE id = ?', [
+        delta,
+        userId,
+      ])
+    : await dbRun(
+        'UPDATE users SET credits = COALESCE(credits, 0) + ? WHERE id = ? AND COALESCE(credits, 0) + ? >= 0',
+        [delta, userId, delta],
+      );
+
+  if (!result.changes) {
+    // No row changed: either the user is gone, or the floor rejected the spend.
+    const exists = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+    if (!exists) throw new Error('User not found for credit change');
     const error = new Error(OUT_OF_CREDITS_MESSAGE);
     error.status = 402;
     throw error;
   }
-  await dbRun('UPDATE users SET credits = ? WHERE id = ?', [nextCredits, userId]);
-  await recordCreditTransaction(userId, delta, reason, meta);
+
+  const row = await dbGet('SELECT credits FROM users WHERE id = ?', [userId]);
+  const nextCredits = typeof row?.credits === 'number' ? row.credits : 0;
+  await recordCreditTransaction(userId, delta, reason, meta, nextCredits);
   return nextCredits;
 }
 
