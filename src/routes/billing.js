@@ -131,30 +131,30 @@ router.post('/webhook', stripeIpAllowlist, async (req, res) => {
 
 async function dispatchStripeEvent(event) {
   switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutCompleted(event.data.object);
-        break;
-      case 'invoice.payment_succeeded':
-        await handleSubscriptionSync({
-          subscriptionId: event.data.object.subscription,
-          planId: event.data.object.metadata?.plan,
-          seats: event.data.object.metadata?.seats,
-          status: event.data.object.status,
-          customerId: event.data.object.customer,
-        });
-        break;
-      case 'customer.subscription.updated':
-      case 'customer.subscription.created':
-        await handleSubscriptionSync({
-          subscriptionId: event.data.object.id,
-          planId: event.data.object.metadata?.plan,
-          seats: event.data.object.items?.data?.[0]?.quantity,
-          status: event.data.object.status,
-          customerId: event.data.object.customer,
-        });
-        break;
-      default:
-        break;
+    case 'checkout.session.completed':
+      await handleCheckoutCompleted(event.data.object);
+      break;
+    case 'invoice.payment_succeeded':
+      await handleSubscriptionSync({
+        subscriptionId: event.data.object.subscription,
+        planId: event.data.object.metadata?.plan,
+        seats: event.data.object.metadata?.seats,
+        status: event.data.object.status,
+        customerId: event.data.object.customer,
+      });
+      break;
+    case 'customer.subscription.updated':
+    case 'customer.subscription.created':
+      await handleSubscriptionSync({
+        subscriptionId: event.data.object.id,
+        planId: event.data.object.metadata?.plan,
+        seats: event.data.object.items?.data?.[0]?.quantity,
+        status: event.data.object.status,
+        customerId: event.data.object.customer,
+      });
+      break;
+    default:
+      break;
   }
 }
 

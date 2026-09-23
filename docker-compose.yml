@@ -15,7 +15,7 @@ services:
       # REQUIRED in production. Every user stores their own provider keys,
       # so without at-rest encryption other people's credentials would sit in
       # plaintext on disk. The server refuses to start without it.
-      - MASTER_KEY=${MASTER_KEY:?set MASTER_KEY - generate with: openssl rand -base64 32}
+      - "MASTER_KEY=${MASTER_KEY:?set MASTER_KEY - generate with openssl rand -base64 32}"
       # Optional. Enables Sign in with Google, GA4 and Search Console.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       # Optional bootstrap for a fresh database. Without it, production

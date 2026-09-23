@@ -23,6 +23,12 @@ WORKDIR /build
 # Lockfile-exact install so the image matches what CI tested.
 COPY client/package.json client/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+# The CSS and bundler toolchain ships native code as per-platform optional
+# packages. If the Linux variant is missing or will not load, fail here with a
+# plain message instead of deep inside Vite's config loader - that is exactly
+# how the first real Linux build of this image died (audit A-21).
+RUN node -e "require('lightningcss'); require('@tailwindcss/oxide'); require('rolldown')" \
+    && echo "native toolchain OK"
 
 COPY client/src ./src
 COPY client/public ./public
