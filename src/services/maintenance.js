@@ -26,8 +26,18 @@ async function runRetentionSweep() {
     [`-${API_LOG_RETENTION_DAYS} days`],
   );
   const tokens = await dbRun('DELETE FROM refresh_tokens WHERE expires_at <= CURRENT_TIMESTAMP');
-  const summary = { apiLogsDeleted: logs.changes, refreshTokensDeleted: tokens.changes };
-  if (summary.apiLogsDeleted || summary.refreshTokensDeleted) {
+  // Stripe retries a failed delivery for at most three days, so a claim older
+  // than the log-retention window can never be needed for deduplication again.
+  const events = await dbRun(
+    `DELETE FROM stripe_webhook_events WHERE received_at < datetime('now', ?)`,
+    [`-${API_LOG_RETENTION_DAYS} days`],
+  );
+  const summary = {
+    apiLogsDeleted: logs.changes,
+    refreshTokensDeleted: tokens.changes,
+    stripeEventsDeleted: events.changes,
+  };
+  if (summary.apiLogsDeleted || summary.refreshTokensDeleted || summary.stripeEventsDeleted) {
     logger.info(summary, 'Retention sweep complete');
   }
   return summary;
