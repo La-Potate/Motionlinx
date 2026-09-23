@@ -40,8 +40,13 @@ export default function LoginPage({
   // Honor ?next=/dashboard so a guarded route can deep-link to a specific
   // app and resume after sign-in. Whitelist to relative paths to keep this
   // from being weaponised into an open-redirect.
+  // Browsers normalise backslashes to slashes, so `/\evil.example` becomes
+  // `//evil.example` after this check unless backslashes are rejected too.
   const rawNext = searchParams.get('next');
-  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
+  const next =
+    rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes('\\')
+      ? rawNext
+      : null;
   const postLoginPath = next || '/dashboard';
 
   const loginForm = useForm<LoginValues>();

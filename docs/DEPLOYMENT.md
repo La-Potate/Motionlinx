@@ -126,6 +126,41 @@ Playwright capture path filters its own requests as well.
 Set `ALLOW_PRIVATE_URL_FETCH=1` only if you intend to audit internal sites,
 and only on an install whose users you trust with your LAN.
 
+### JWT_SECRET must be at least 32 characters
+
+Presence alone used to be enough. A short HS256 secret can be brute-forced
+offline, and a forged token is a session for any account — so production now
+refuses to start with fewer than 32 characters, with the same kind of message
+`MASTER_KEY` gives. If an existing install was set up with a short secret,
+generate a new one (`openssl rand -base64 32`); every user signs in again once,
+which is the correct outcome for a secret that was too weak.
+
+### Stopping the container
+
+`docker stop` / `compose up --build` send SIGTERM. The app stops accepting
+connections, lets in-flight requests finish (a page capture can run for ~30s),
+shuts down the headless browsers, then closes the database and waits for it —
+all inside a 9-second deadline, because Docker follows up with SIGKILL at 10s.
+Before this it exited immediately, mid-request, leaving Chromium processes and
+a half-checkpointed WAL behind on every rebuild.
+
+### Housekeeping the app does for itself
+
+Once at start and then daily: request logs older than 90 days and expired
+refresh tokens are deleted. Both tables previously grew without bound; on an
+always-on NAS that eventually meant a multi-million-row log the admin panel
+scanned on every page. Nothing else is purged — credit history is kept.
+
+### Google sign-in for Analytics / Search Console
+
+Connecting GA4 or Search Console sets a short-lived cookie
+(`ga4_oauth_nonce` / `gsc_oauth_nonce`, HttpOnly, 10 minutes) that must be
+present when Google redirects back. It binds the connection to the browser
+that started it, so a crafted Google link cannot attach *your* Google account
+to *someone else's* Motionlinx account. If a user reports "invalid_state" after
+consenting, they started the flow in one browser and finished in another —
+have them retry in a single browser session.
+
 ### MASTER_KEY is mandatory in production
 
 The server refuses to start without it. Each user brings their own provider

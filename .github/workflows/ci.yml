@@ -2,57 +2,69 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend (lint + test)
+  server:
+    name: Server — lint, test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install backend deps
-        run: npm ci --no-audit --no-fund
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      # The suite boots the real app against a temp SQLite database per file
+      # and exercises tenant isolation, account state, SSRF, credits, billing
+      # webhooks and OAuth state binding. No external credentials needed.
+      - run: npm test
         env:
           NODE_ENV: test
-          # Tests set their own per-run JWT_SECRET + USERDATA_PATH; these are
-          # just here to satisfy the env-schema validator at module load.
-          JWT_SECRET: ci-test-secret-not-for-production
-          CLIENT_ORIGIN: http://localhost:3001
 
   client:
-    name: Client (build)
+    name: Client — types, build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
+          cache: npm
           cache-dependency-path: client/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run build
+      # Production builds must not ship source maps (audit A-08).
+      - name: Assert no source maps in build
+        run: |
+          count=$(find build -name '*.map' | wc -l)
+          echo "source maps: $count"
+          test "$count" -eq 0
 
-      - name: Install client deps
-        working-directory: client
-        run: npm ci --no-audit --no-fund
-
-      - name: Typecheck
-        working-directory: client
-        run: npm run typecheck
-
-      - name: Build
-        working-directory: client
-        run: npm run build
+  image:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    needs: [server, client]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Build only — nothing is pushed. Proves the multi-stage Dockerfile,
+      # the native sqlite3/bcrypt prebuilds and the Playwright install all
+      # resolve on a clean machine.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: motionlinx:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

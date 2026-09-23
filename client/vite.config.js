@@ -32,7 +32,10 @@ export default defineConfig({
   },
   build: {
     outDir: 'build',
-    sourcemap: true,
+    // Source maps were shipping in the production image (96 .map files, each
+    // referenced from its bundle), handing the full original client source to
+    // anyone who asked for it. Set VITE_SOURCEMAP=1 for a local debugging build.
+    sourcemap: process.env.VITE_SOURCEMAP === '1',
     chunkSizeWarningLimit: 1024,
   },
   oxc: {

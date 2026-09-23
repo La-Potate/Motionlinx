@@ -53,5 +53,17 @@ export const heatmapService = {
     }
     return await r.json();
   },
-  reportHtmlUrl(id) { return `${API}/reports/${id}/html`; }
+  reportHtmlUrl(id) { return `${API}/reports/${id}/html`; },
+  /**
+   * The snapshot route needs the bearer token, which an <iframe src> or an
+   * <a href> cannot send — both used to get a 401 and the preview never
+   * rendered. Fetch it here and let the page render it via srcDoc.
+   * Resolves to null when no snapshot has been generated yet.
+   */
+  async fetchReportHtml(id): Promise<string | null> {
+    const r = await fetch(`${API}/reports/${id}/html`, { headers: authHeaders() });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(await errorFrom(r, 'Failed to load snapshot'));
+    return await r.text();
+  },
 };

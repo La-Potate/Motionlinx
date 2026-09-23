@@ -37,6 +37,42 @@ export default function HeatmapPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  // Rendered snapshot HTML. Loaded with the authenticated client because an
+  // <iframe src> cannot carry the bearer token the route requires.
+  const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSnapshotHtml(null);
+    setSnapshotError(null);
+    if (!selected?.id || busy) return undefined;
+    heatmapService
+      .fetchReportHtml(selected.id)
+      .then((html) => {
+        if (!cancelled) setSnapshotHtml(html);
+      })
+      .catch((err: any) => {
+        if (!cancelled) setSnapshotError(err?.message || 'Failed to load snapshot');
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch after a generate run completes (busy flips back to false) or a
+    // different report is selected.
+  }, [selected?.id, selected?.snapshots, selected?.last_run_at, selected?.status, busy]);
+
+  const openSnapshot = () => {
+    if (!snapshotHtml) {
+      toast.error('Generate a snapshot first');
+      return;
+    }
+    const blob = new Blob([snapshotHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener');
+    // The new tab has its own copy once loaded; release the URL afterwards.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
   // These mirror the API contract. The old form collected `radius` and `grid`
   // and no placeId/lat/lng at all, so every create returned 400.
   const [form, setForm] = useState({
@@ -242,17 +278,8 @@ export default function HeatmapPage() {
                         )}
                         Generate snapshot
                       </Button>
-                      <Button
-                        variant="outline"
-                        asChild
-                      >
-                        <a
-                          href={heatmapService.reportHtmlUrl(selected.id)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <ExternalLink className="size-4" /> Open report
-                        </a>
+                      <Button variant="outline" onClick={openSnapshot} disabled={!snapshotHtml}>
+                        <ExternalLink className="size-4" /> Open report
                       </Button>
                       <Button
                         variant="ghost"
@@ -278,15 +305,29 @@ export default function HeatmapPage() {
                 </Card>
               )}
 
-              <Card>
-                <CardContent className="p-0">
-                  <iframe
-                    title="Heatmap preview"
-                    src={heatmapService.reportHtmlUrl(selected.id)}
-                    className="w-full h-[640px] rounded-lg border-0"
-                  />
-                </CardContent>
-              </Card>
+              {snapshotError && (
+                <Card className="border-rose">
+                  <CardContent className="flex items-start gap-3 p-4">
+                    <AlertCircle className="size-4 text-rose-ink shrink-0 mt-0.5" />
+                    <p className="text-sm">{snapshotError}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {snapshotHtml && (
+                <Card>
+                  <CardContent className="p-0">
+                    {/* Static HTML with inline styles only; an empty sandbox
+                        keeps it in an opaque origin with no script execution. */}
+                    <iframe
+                      title="Heatmap preview"
+                      srcDoc={snapshotHtml}
+                      sandbox=""
+                      className="w-full h-[640px] rounded-lg border-0"
+                    />
+                  </CardContent>
+                </Card>
+              )}
             </>
           )}
         </div>
