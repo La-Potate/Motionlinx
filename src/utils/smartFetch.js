@@ -79,17 +79,29 @@ const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 // tens of seconds; callers with a longer job pass `timeout` explicitly.
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 60000;
 
-/** Abort when either input aborts. Avoids AbortSignal.any (Node >= 20.3 only). */
+/**
+ * Abort when either input aborts. Avoids AbortSignal.any (Node >= 20.3 only).
+ *
+ * Returns the combined signal plus a `cleanup` that detaches the listeners
+ * added to the inputs. A caller may reuse one long-lived signal (a background
+ * job's, say) across hundreds of fetches; without cleanup every one of them
+ * would leave a listener behind on that signal for the job's lifetime.
+ */
 function combineSignals(a, b) {
-  if (!a) return b;
-  if (!b) return a;
+  if (!a) return { signal: b, cleanup: () => {} };
+  if (!b) return { signal: a, cleanup: () => {} };
   const controller = new AbortController();
-  const forward = (source) => () => controller.abort(source.reason);
+  const onA = () => controller.abort(a.reason);
+  const onB = () => controller.abort(b.reason);
   if (a.aborted) controller.abort(a.reason);
-  else a.addEventListener('abort', forward(a), { once: true });
+  else a.addEventListener('abort', onA, { once: true });
   if (b.aborted) controller.abort(b.reason);
-  else b.addEventListener('abort', forward(b), { once: true });
-  return controller.signal;
+  else b.addEventListener('abort', onB, { once: true });
+  const cleanup = () => {
+    a.removeEventListener('abort', onA);
+    b.removeEventListener('abort', onB);
+  };
+  return { signal: controller.signal, cleanup };
 }
 
 /**
@@ -97,12 +109,16 @@ function combineSignals(a, b) {
  * in addition to the standard init fields; `timeout: 0` opts out. A caller's
  * own `signal` is respected alongside the timer.
  */
-function timedFetch(url, init = {}) {
+async function timedFetch(url, init = {}) {
   const { timeout, ...rest } = init || {};
   const ms = timeout === undefined ? DEFAULT_UPSTREAM_TIMEOUT_MS : timeout;
   if (!(ms > 0)) return cachedFetch(url, rest);
-  const signal = combineSignals(rest.signal, AbortSignal.timeout(ms));
-  return cachedFetch(url, { ...rest, signal });
+  const { signal, cleanup } = combineSignals(rest.signal, AbortSignal.timeout(ms));
+  try {
+    return await cachedFetch(url, { ...rest, signal });
+  } finally {
+    cleanup();
+  }
 }
 
 /**

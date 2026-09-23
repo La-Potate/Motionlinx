@@ -11,6 +11,7 @@ const { getSystemApiKey } = require('../storage/systemSettings');
 const { JWT_SECRET } = require('../config/env');
 const gsc = require('../services/gsc');
 const {
+  publicOrigin,
   readCookie,
   setStateCookie,
   clearStateCookie,
@@ -105,16 +106,12 @@ function readOauthClientConfig() {
 }
 
 function resolveRedirectUri(req) {
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}/api/gsc/auth/callback`;
+  return `${publicOrigin(req)}/api/gsc/auth/callback`;
 }
 
 function clientReturnUrl(req, params) {
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
   const qs = new URLSearchParams(params).toString();
-  return `${proto}://${host}/AI-Assistant${qs ? `?${qs}` : ''}`;
+  return `${publicOrigin(req)}/AI-Assistant${qs ? `?${qs}` : ''}`;
 }
 
 async function getValidAccessToken(userId) {

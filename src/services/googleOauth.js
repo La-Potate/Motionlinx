@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { timedFetch } = require('../utils/smartFetch');
+const { CLIENT_ORIGIN, isProd } = require('../config/env');
 
 // Google's token endpoints answer in well under a second; a hung connection
 // here used to stall the OAuth callback with no bound at all.
@@ -103,6 +104,29 @@ async function revokeToken(token) {
   }
 }
 
+// ---- Public origin --------------------------------------------------------
+//
+// The redirect URI handed to Google and the URL the browser is sent back to
+// were both assembled from X-Forwarded-Host / Host on the incoming request.
+// In production CLIENT_ORIGIN is mandatory and *is* the public origin, so use
+// it and stop trusting request headers for a value that ends up in a redirect.
+// Development keeps header derivation so a local setup keeps working
+// unchanged whatever it has registered in Google Cloud Console.
+function publicOrigin(req) {
+  if (isProd) {
+    const configured = String(CLIENT_ORIGIN || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)[0];
+    if (configured) return configured.replace(/\/+$/, '');
+  }
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .split(',')[0]
+    .trim();
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
 // ---- OAuth state ↔ browser binding ----------------------------------------
 //
 // The signed `state` proves which user *started* the flow. On its own that is
@@ -162,6 +186,7 @@ function nonceMatches(fromCookie, fromState) {
 }
 
 module.exports = {
+  publicOrigin,
   readCookie,
   setStateCookie,
   clearStateCookie,

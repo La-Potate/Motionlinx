@@ -11,6 +11,7 @@ const { getSystemApiKey } = require('../storage/systemSettings');
 const { JWT_SECRET } = require('../config/env');
 const ga4 = require('../services/ga4');
 const {
+  publicOrigin,
   readCookie,
   setStateCookie,
   clearStateCookie,
@@ -116,20 +117,15 @@ function readOauthClientConfig() {
   return { clientId, clientSecret };
 }
 
+// Production derives these from CLIENT_ORIGIN; development from the request,
+// so a local setup keeps whatever redirect URI it registered with Google.
 function resolveRedirectUri(req) {
-  // Build the redirect URI from the request itself so a single deployment
-  // works across localhost dev (http://localhost:3000) and production
-  // (https://...) without operator config drift.
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}/api/ga4/auth/callback`;
+  return `${publicOrigin(req)}/api/ga4/auth/callback`;
 }
 
 function clientReturnUrl(req, params) {
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
   const qs = new URLSearchParams(params).toString();
-  return `${proto}://${host}/ai-traffic-report${qs ? `?${qs}` : ''}`;
+  return `${publicOrigin(req)}/ai-traffic-report${qs ? `?${qs}` : ''}`;
 }
 
 // Returns a usable access token, refreshing if necessary. Throws when the

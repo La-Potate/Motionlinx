@@ -161,6 +161,11 @@ to *someone else's* Motionlinx account. If a user reports "invalid_state" after
 consenting, they started the flow in one browser and finished in another —
 have them retry in a single browser session.
 
+In production the OAuth redirect URI and the post-consent return URL are built
+from `CLIENT_ORIGIN`, not from request headers — so the redirect URIs to
+register in Google Cloud Console are exactly
+`<CLIENT_ORIGIN>/api/ga4/auth/callback` and `<CLIENT_ORIGIN>/api/gsc/auth/callback`.
+
 ### MASTER_KEY is mandatory in production
 
 The server refuses to start without it. Each user brings their own provider
