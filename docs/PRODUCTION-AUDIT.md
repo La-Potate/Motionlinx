@@ -172,6 +172,79 @@ No CI configuration exists. **Fix:** GitHub Actions running lint, tests, `tsc`, 
 
 ---
 
+## Browser QA pass (2026-09-23, after the audit fixes)
+
+Every client route driven in Chromium in three auth states with reload,
+back/forward and a 390 px overflow check; every visible input filled and
+every visible button clicked; twelve scripted end-to-end flows; console,
+page exceptions and failed requests captured throughout; 4 330 malformed API
+requests as admin and as a member. Findings below were all reproduced in the
+browser and re-verified there after the fix.
+
+### Q-01 · HIGH · Correctness · Confirmed
+**Location:** `client/index.html` inline theme script; `src/app.js` SPA fallback
+**Problem:** The built `index.html` carries an inline script (dark-mode init before React mounts) with no CSP nonce, and the shell was served verbatim. The browser blocked it on **every page load** with a console error, so the anti-flash theme init never ran in production.
+**Fix:** The SPA fallback stamps the per-request nonce onto inline `<script>` tags; `index.html` is no longer served by `express.static`. The template is re-read when its mtime changes, and asset-like paths (`/assets/*`, any extension) 404 instead of returning the shell — a rebuild while running produced a stale template pointing at vanished hashed files and every page died with a module MIME error.
+**Status: verified** — zero CSP errors across all routes and states; nonce in the shell matches the header; missing asset → 404 text/plain.
+
+### Q-02 · HIGH · Correctness · Confirmed
+**Location:** `client/src/features/settings/SettingsPage.tsx` `Field`
+**Problem:** `Field` was a plain function component, but the Profile and Security forms spread `register()` onto it, so react-hook-form never received the input refs. The email rendered empty and was absent from the submit body (server said "Profile updated" having changed nothing); the password form could not read its fields at all. **Users could change neither their email nor their password from the UI.**
+**Fix:** `forwardRef`, matching the login form's working `FormField`.
+**Status: verified** — email change persists across reload; password changed through the UI and the new password signs in.
+
+### Q-03 · HIGH · Correctness · Confirmed
+**Location:** `SettingsPage.tsx` `getUserFromToken`
+**Problem:** The Settings page built its user from the *JWT payload*, which carries username/email as of sign-in — so even with Q-02 fixed, a saved email did not show until the next login.
+**Fix:** Identity from the server-validated session user; the token is read only for `iat`. The profile form re-seeds when the user changes and after a save.
+**Status: verified** — same flow as Q-02.
+
+### Q-04 · HIGH · Authorization (too strict) · Confirmed
+**Location:** `src/utils/userLevel.js` trial allowlist
+**Problem:** New accounts are `trial` and are sent to `/pricing`, whose plans call (`/api/billing/plans`) answered **403** for trial users. The page took that as "Stripe not configured" and disabled checkout — a trial could never upgrade.
+**Fix:** `/api/billing` allowed for trial accounts; every tool and admin route stays refused.
+**Status: verified** — `tests/trialAccess.test.mjs`; sweep shows no 403 on `/pricing` for a member.
+
+### Q-05 · MEDIUM · Reliability · Confirmed
+**Location:** `src/routes/auth.js` limiters
+**Problem:** The 10-per-15-min auth limiter counted *successful* logins and was shared with `/auth/refresh`, which the client calls on a timer, on every 401 and from every tab. A few devices — or a dead session refreshing — locked the user out of signing in for 15 minutes.
+**Fix:** `skipSuccessfulRequests` on the auth limiter; refresh gets its own 60/15 min bucket. Global `/api` limit made configurable (`API_RATE_LIMIT_MAX`, default 300 — measured at ~2.4 calls per full page load, ~120 loads/15 min) and its 429 body is JSON like every other API error.
+**Status: verified** — flows sign in repeatedly without a 429.
+
+### Q-06 · MEDIUM · Correctness · Confirmed
+**Location:** `src/config/helmet.js` `base-uri`
+**Problem:** Captured pages are rendered via `srcdoc`, inherit the page CSP, and carry the server-injected `<base href>`; `base-uri 'self'` blocked it on every capture, so relative images/CSS in previews did not resolve.
+**Fix:** `base-uri 'self' https: http:` — scripts stay nonce-gated and origin-checked regardless of `<base>`.
+**Status: verified** — no `base-uri` violation when opening a capture.
+
+### Q-07 · MEDIUM · Performance · Confirmed
+**Location:** `src/services/pageCommenter.js` `renderPageWithBrowser`, `inlineStylesWithPlaywright`
+**Problem:** Every capture slept a fixed **30 s** (`waitForTimeout(PLAYWRIGHT_RENDER_TIMEOUT_MS)` — a timeout used as a delay) after `networkidle`; and `addStyleTag({ content: '' })` throws in Playwright, so browser-side style inlining never ran (warning on every capture).
+**Fix:** 1.5 s settle; the no-op `addStyleTag` removed.
+**Status: verified** — server responseTime for a capture of example.com: 30 006 ms before, **9 362 ms** after; zero "Inline styles (playwright) failed" warnings after (two per capture before).
+
+### Q-08 · MEDIUM · Responsive layout · Confirmed
+**Location:** `client/src/shared/ui/tabs.tsx`, `table.tsx`
+**Problem:** `/admin` overflowed horizontally at 390 px: the five-trigger tab strip (555 px) and the users table (781 px) widened the page instead of scrolling within their containers.
+**Fix:** `TabsList` gets `max-w-full overflow-x-auto`; the `Table` wrapper `max-w-full min-w-0`.
+**Status: verified** — the final route sweeps (three auth states, 42 routes at 390 px) report no horizontal overflow anywhere.
+
+### Q-09 · LOW · Accessibility · Confirmed
+**Location:** `SiteMarkerPage.tsx` delete control
+**Problem:** Icon-only delete button with no accessible name (the only one in the app; audited all `size="icon*"` buttons).
+**Fix:** `aria-label="Delete page"`.
+**Status: verified** — flow finds and uses it.
+
+### Q-10 · LOW · Console hygiene · Confirmed
+Expected outcomes (wrong password, 429, stale session on restore, declined refresh) were logged with `console.error`. Now only server faults and unreachable-server cases are logged.
+**Status: verified** — console clean across all flows.
+
+### Q-11 · LOW · Correctness · Confirmed
+**Location:** `client/src/features/web-search/components/MapPreview.tsx`
+**Problem:** Leaflet guesses its default marker image directory from the URL of its stylesheet. Under the Vite build the stylesheet is bundled and hashed, so the guess fell back to the current route and every marker on **Map element** requested `/web-search/marker-icon.png` and `/web-search/marker-shadow.png` — two 404s per marker and a broken-image placeholder where the pin should be.
+**Fix:** Import the three marker images from the package and pin them on `L.Icon.Default`; Vite inlines them as `data:` URIs, which `img-src` already allows.
+**Status: verified** — one 25×41 marker and one shadow render from `data:image/png`, no requests to `/web-search/marker-*.png`, console clean.
+
 ## Dismissed after checking
 - Stripe raw body for signature verification — captured correctly, scoped to the webhook path.
 - Captured-page iframe (`PageAnnotator`) — `sandbox="allow-same-origin"` without `allow-scripts`; scripts cannot run.

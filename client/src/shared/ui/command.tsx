@@ -1,8 +1,8 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 import { Search } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
-import { Dialog, DialogContent } from './dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './dialog';
 
 export const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
@@ -30,6 +30,13 @@ export const CommandDialog = ({
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent hideClose className="overflow-hidden p-0 sm:max-w-xl">
+      {/* Radix requires a title (and a description or aria-describedby) on
+          every dialog for screen readers; without them it logs an error on
+          each open. Visually hidden - the palette's input is the visible UI. */}
+      <DialogTitle className="sr-only">Command palette</DialogTitle>
+      <DialogDescription className="sr-only">
+        Search tools and pages. Type to filter, use the arrow keys to choose, Enter to open.
+      </DialogDescription>
       <Command className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-foreground-subtle [&_[cmdk-group]]:px-1 [&_[cmdk-input-wrapper]_svg]:size-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2">
         {children}
       </Command>

@@ -107,11 +107,17 @@ async function buildApp() {
     `JWT_SECRET: ${process.env.JWT_SECRET ? 'Custom (SECURE)' : 'Default (INSECURE - Development only)'}`,
   );
 
+  // 300 per 15 min per client IP. Measured: a signed-in user's full page load
+  // costs ~2.4 API calls, so this is roughly 120 full page loads per quarter
+  // hour - ample for a person, tight for a script. The body is JSON like every
+  // other API error; as plain text the client could only show a generic
+  // "Request failed with status code 429".
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: envConfig.API_RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
+    message: { error: 'Too many requests from this address. Please wait a few minutes and try again.' },
   });
   app.use('/api', limiter);
   app.use(
@@ -248,10 +254,54 @@ async function buildApp() {
   app.use('/api/ai-assistant', require('./routes/ai-assistant'));
   require('./jobs/aiAssistantAnalysis');
 
-  // Serve the CRA/Vite build + SPA catch-all.
-  app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
+  // Serve the Vite build + SPA catch-all.
+  //
+  // index.html is NOT served by express.static (index: false) because it needs
+  // per-request treatment: the CSP above allows inline scripts only with this
+  // request's nonce, and the built index.html carries an inline bootstrap
+  // script (theme/colour-scheme init). Served verbatim, the browser blocked it
+  // on every page load with a console error and the script never ran. The
+  // template is read once; each response gets its nonce stamped onto inline
+  // <script> tags. No caching, so a deploy is picked up on the next request
+  // and a nonce is never reused across responses.
+  const clientBuild = path.join(__dirname, '..', 'client', 'build');
+  const indexPath = path.join(clientBuild, 'index.html');
+  // Cached by mtime, not forever: a client rebuild while the server runs (any
+  // bare-metal deploy; never the Docker image, whose build is immutable) swaps
+  // the hashed asset names, and a stale template would keep pointing at files
+  // that no longer exist - every page then dies with a module MIME error.
+  let indexCache = { mtimeMs: -1, html: '' };
+  const readIndexTemplate = () => {
+    let stat;
+    try {
+      stat = fs.statSync(indexPath);
+    } catch {
+      return '';
+    }
+    if (stat.mtimeMs !== indexCache.mtimeMs) {
+      indexCache = { mtimeMs: stat.mtimeMs, html: fs.readFileSync(indexPath, 'utf8') };
+    }
+    return indexCache.html;
+  };
+  const renderIndex = (nonce) =>
+    // Only inline scripts (no src=) need the nonce; external ones are 'self'.
+    readIndexTemplate().replace(
+      /<script(?![^>]*\bsrc=)(?![^>]*\bnonce=)([^>]*)>/g,
+      `<script nonce="${nonce}"$1>`,
+    );
+
+  app.use(express.static(clientBuild, { index: false }));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html'));
+    // A missing asset must be a 404, not the SPA shell: the browser would
+    // otherwise get text/html where it asked for a module and report an
+    // opaque MIME error instead of the file it could not find.
+    if (req.path.startsWith('/assets/') || path.extname(req.path)) {
+      return res.status(404).type('text').send('Not found');
+    }
+    const html = renderIndex(res.locals.cspNonce || '');
+    if (!html) return res.status(404).type('text').send('Client build not found');
+    res.set('Cache-Control', 'no-cache');
+    return res.type('html').send(html);
   });
 
   // Last-resort error handler. Honours an explicit status when the thrower

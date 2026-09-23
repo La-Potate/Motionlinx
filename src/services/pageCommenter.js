@@ -6,11 +6,10 @@ const { normalizeUrl } = require('../utils/url');
 const { assertPublicUrl } = require('../utils/ssrfGuard');
 const { fetchWithSmartAgent } = require('../utils/smartFetch');
 const { BUSINESS_AUDIT_USER_AGENT } = require('../config/env');
-const {
-  ensureBrowserType,
-  PLAYWRIGHT_NAV_TIMEOUT_MS,
-  PLAYWRIGHT_RENDER_TIMEOUT_MS,
-} = require('../integrations/playwright/pool');
+const { ensureBrowserType, PLAYWRIGHT_NAV_TIMEOUT_MS } = require('../integrations/playwright/pool');
+
+// How long to let the page settle after the scroll pass before snapshotting.
+const PLAYWRIGHT_SETTLE_MS = 1500;
 
 const ALT_BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
@@ -85,7 +84,9 @@ async function inlineStylesServerSide(html, baseUrl) {
 
 async function inlineStylesWithPlaywright(page) {
   try {
-    await page.addStyleTag({ content: '' });
+    // (An empty addStyleTag({ content: '' }) used to sit here. Playwright
+    // rejects an empty content string, so this whole step threw on every
+    // capture and the styles below were never inlined from the browser.)
     await page.evaluate(async () => {
       const links = Array.from(document.querySelectorAll('link[rel~="stylesheet"]'));
       for (const link of links) {
@@ -175,8 +176,13 @@ async function renderPageWithBrowser(url) {
           window.scrollTo(0, 0);
           await wait(2000);
         });
+        // Brief settle for late layout after the scroll pass. This was
+        // PLAYWRIGHT_RENDER_TIMEOUT_MS - an unconditional 30-second sleep on
+        // every capture, on top of the networkidle wait above, which is why
+        // each Site Marker / Page Commenter capture took ~30s regardless of
+        // the page. That constant is a timeout, not a delay.
         // eslint-disable-next-line no-await-in-loop
-        await page.waitForTimeout(PLAYWRIGHT_RENDER_TIMEOUT_MS);
+        await page.waitForTimeout(PLAYWRIGHT_SETTLE_MS);
         // eslint-disable-next-line no-await-in-loop
         await inlineStylesWithPlaywright(page);
         // eslint-disable-next-line no-await-in-loop

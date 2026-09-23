@@ -11,7 +11,10 @@ export const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-surface-muted p-1 text-foreground-muted',
+      // max-w-full + overflow-x-auto: a strip with many triggers (Admin has
+      // five) scrolls within its container at phone width instead of widening
+      // the whole page.
+      'inline-flex h-9 max-w-full items-center justify-center gap-1 overflow-x-auto rounded-lg bg-surface-muted p-1 text-foreground-muted',
       className
     )}
     {...props}

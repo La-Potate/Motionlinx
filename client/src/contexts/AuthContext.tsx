@@ -71,8 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(session.user);
               scheduleRefresh(session.token);
             }
-          } catch (error) {
-            console.error('Session refresh failed', error);
+          } catch {
+            // The server declined to renew (revoked, expired, signed out
+            // elsewhere). Signing out is the correct response, not an error.
             await handleLogout();
           }
         }, refreshDelay);
@@ -117,8 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isMounted && session?.user && session?.token) {
             persistSession(session);
           }
-        } catch (refreshError) {
-          console.error('Failed to restore session', refreshError);
+        } catch {
+          // Stored session is stale; start signed out. Expected after a long
+          // absence, so it is not logged as an error.
           clearSessionState();
         }
       } finally {

@@ -31,6 +31,12 @@ const envSchema = z.object({
   // address to slip past rate limits and bans.
   TRUST_PROXY: z.string().optional().default(''),
 
+  // Global API limiter: requests per client IP per 15 minutes. The default
+  // suits one person (a full page load is ~2.4 API calls). Raise it when many
+  // users share one address - an office NAT - or when driving the API from a
+  // script; lower it if the install is public and abused.
+  API_RATE_LIMIT_MAX: z.coerce.number().int().min(10).default(300),
+
   // Server-side fetching of user-supplied URLs (page capture, crawler, bulk
   // HTTP checks, schema autofill) is restricted to public internet addresses.
   // Set to 1 only if this install genuinely needs to audit internal sites --
@@ -176,6 +182,7 @@ module.exports = {
   INITIAL_ADMIN_PASSWORD: env.INITIAL_ADMIN_PASSWORD,
   CLIENT_ORIGIN: env.CLIENT_ORIGIN,
   TRUST_PROXY: env.TRUST_PROXY,
+  API_RATE_LIMIT_MAX: env.API_RATE_LIMIT_MAX,
   ALLOW_PRIVATE_URL_FETCH: env.ALLOW_PRIVATE_URL_FETCH,
   USERDATA_PATH: env.USERDATA_PATH,
   LEGACY_USERDATA_PATH: env.LEGACY_USERDATA_PATH,

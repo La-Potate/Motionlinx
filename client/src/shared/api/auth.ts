@@ -96,9 +96,7 @@ api.interceptors.response.use(
 
     const { status } = error.response;
 
-    if (status === 429) {
-      console.error('Rate limit exceeded');
-    }
+    // 429 is a user-facing condition the UI reports; nothing to log.
 
     if (status === 402) {
       error.message =
@@ -180,11 +178,11 @@ export const authService = {
         error.message ||
         'Login failed';
 
-      console.error('Login error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: errorMessage
-      });
+      // A rejected credential is an expected outcome the form displays, not a
+      // defect; only log when the server itself failed or was unreachable.
+      if (!error.response || error.response.status >= 500) {
+        console.error('Login error:', { status: error.response?.status, message: errorMessage });
+      }
 
       throw new Error(errorMessage);
     }
@@ -198,7 +196,9 @@ export const authService = {
       return response.data;
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || error.message || 'Google sign-in failed';
-      console.error('Google login error:', errorMessage);
+      if (!error.response || error.response.status >= 500) {
+        console.error('Google login error:', errorMessage);
+      }
       throw new Error(errorMessage);
     }
   },
@@ -215,11 +215,9 @@ export const authService = {
         error.message ||
         'Signup failed';
 
-      console.error('Signup error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: errorMessage
-      });
+      if (!error.response || error.response.status >= 500) {
+        console.error('Signup error:', { status: error.response?.status, message: errorMessage });
+      }
 
       throw new Error(errorMessage);
     }

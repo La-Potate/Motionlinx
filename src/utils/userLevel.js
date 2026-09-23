@@ -13,7 +13,11 @@ const TRIAL_ALLOWED_METHODS = new Set([
   'GET /api/auth/validate',
   'POST /api/auth/validate',
 ]);
-const TRIAL_ALLOWED_PREFIXES = ['/api/trial'];
+// A new account is trial, is sent straight to /pricing, and must be able to
+// read the plans and start a checkout there — that page IS the upgrade path.
+// The plans call was 403 for trial users, which the pricing page reported as
+// "Stripe not configured" and disabled checkout, so a trial could never buy.
+const TRIAL_ALLOWED_PREFIXES = ['/api/trial', '/api/billing'];
 
 function isTrialRequestAllowed(req = {}) {
   const method = (req.method || 'GET').toUpperCase();

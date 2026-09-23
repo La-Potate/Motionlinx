@@ -270,6 +270,7 @@ export default function SiteMarkerPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label="Delete page"
                         onClick={() => onDelete(selected.id)}
                       >
                         <Trash2 className="size-4 text-rose-ink" />

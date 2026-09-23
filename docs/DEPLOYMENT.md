@@ -70,6 +70,10 @@ Measured on this app, with `X-Forwarded-For` present:
 | unset | `::ffff:127.0.0.1` (the tunnel, for every client) |
 | `TRUST_PROXY=1` | `203.0.113.55` (the real client) |
 
+The limit itself is `API_RATE_LIMIT_MAX` (default 300). Measured: a signed-in
+user's full page load costs ~2.4 API calls, so the default is about 120 full
+page loads per quarter hour. Raise it if many people share one address.
+
 Use the **number of hops** — cloudflared alone is `1`. Avoid `true`: it trusts
 the whole `X-Forwarded-For` chain, which the client controls, so anyone could
 forge an address to reset their own rate limit.

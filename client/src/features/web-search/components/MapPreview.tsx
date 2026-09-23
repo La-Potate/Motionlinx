@@ -1,6 +1,18 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// Leaflet guesses its marker image directory from the stylesheet URL, which
+// points at the route (`/web-search/marker-icon.png`, 404) once Vite has
+// hashed and inlined the CSS. Pin the bundled images instead.
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
 
 export type PreviewMarker = {
   id: string;

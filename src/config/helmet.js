@@ -56,7 +56,13 @@ function buildHelmet() {
         frameSrc: ["'self'", 'https://accounts.google.com', 'https://js.stripe.com'],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
-        baseUri: ["'self'"],
+        // Captured pages (Site Marker, Page Commenter) are rendered in a
+        // srcdoc iframe, which inherits this policy, and the server injects
+        // `<base href="<captured origin>">` so the page's relative images and
+        // styles resolve. 'self' alone blocked that on every capture. Scripts
+        // are nonce-gated and origin-checked regardless of <base>, so widening
+        // base-uri to http(s) does not reopen script injection.
+        baseUri: ["'self'", 'https:', 'http:'],
         formAction: ["'self'"],
         upgradeInsecureRequests: isProd ? [] : null,
       },

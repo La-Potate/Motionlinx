@@ -25,10 +25,30 @@ const {
 
 const router = express.Router();
 
+// Brute-force protection: ten FAILED attempts per IP per 15 minutes. Successful
+// requests do not count — before, they did, so a person signing in on a few
+// devices (or one office behind a NAT) could lock themselves out with correct
+// passwords, and every token refresh drew from the same ten.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: 'Too many authentication attempts, please try again later.',
+});
+
+// Refresh is called automatically by the client — on a 401, on a timer, and by
+// every open tab — so it must never share the login bucket: a handful of
+// failed refreshes from a dead session used to leave the user unable to log
+// back in for 15 minutes. Its own limiter still bounds abuse.
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many session refresh attempts, please sign in again.',
 });
 
 const validateLogin = [
@@ -177,7 +197,7 @@ router.post('/google', authLimiter, async (req, res) => {
   }
 });
 
-router.post('/refresh', authLimiter, async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res) => {
   const { refreshToken } = req.body || {};
   if (!refreshToken) return res.status(400).json({ error: 'Refresh token is required' });
 

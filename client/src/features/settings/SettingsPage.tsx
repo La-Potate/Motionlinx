@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { forwardRef, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   User as UserIcon,
@@ -27,6 +27,7 @@ import { Badge } from '@/shared/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui/tabs';
 import { useSearchParams } from 'react-router-dom';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/shared/ui/sonner';
 import { cn } from '@/shared/lib/cn';
 
@@ -39,18 +40,31 @@ type CurrentUser = {
   iat?: number;
 };
 
-function getUserFromToken(): CurrentUser | null {
+// The only thing the token is still read for: when it was issued ("member
+// since"). Identity fields must NOT come from the token - it carries the
+// username and email as they were at sign-in, so after saving a new email the
+// profile kept showing the old one until the next login.
+function getTokenIssuedAt(): number | undefined {
   try {
     const token = localStorage.getItem('token');
-    if (!token) return null;
-    return JSON.parse(atob(token.split('.')[1]));
+    if (!token) return undefined;
+    return JSON.parse(atob(token.split('.')[1])).iat;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
 export default function SettingsPage() {
-  const user = getUserFromToken();
+  const { user: sessionUser } = useAuth();
+  const user: CurrentUser | null = sessionUser
+    ? {
+        id: sessionUser.id,
+        username: sessionUser.username,
+        email: sessionUser.email,
+        role: sessionUser.role,
+        iat: getTokenIssuedAt(),
+      }
+    : null;
 
   // Deep-link support: /settings?tab=apis&highlight=serperApiKey opens the
   // right tab AND scrolls to the exact field. Tools link here directly so
@@ -189,13 +203,20 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function ProfileCard({ user }: { user: CurrentUser }) {
-  const { register, handleSubmit, formState: { isSubmitting } } = useForm({
+  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm({
     defaultValues: { username: user.username, email: user.email || '' },
   });
+
+  // defaultValues are read once at mount; if the session user arrives or
+  // changes afterwards, re-seed so the form never shows a stale identity.
+  useEffect(() => {
+    reset({ username: user.username, email: user.email || '' });
+  }, [user.username, user.email, reset]);
 
   const onSubmit = async (data: any) => {
     try {
       await userService.updateProfile(data);
+      reset(data);
       toast.success('Profile updated');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update profile');
@@ -453,18 +474,20 @@ function PromptsCard() {
   );
 }
 
-function Field({
-  id,
-  label,
-  icon,
-  trailing,
-  ...input
-}: React.InputHTMLAttributes<HTMLInputElement> & {
-  id: string;
-  label: React.ReactNode;
-  icon?: React.ReactNode;
-  trailing?: React.ReactNode;
-}) {
+// Must forward the ref: the Profile and Security forms spread
+// react-hook-form's register() onto this, and RHF reads and seeds values
+// through the input ref. As a plain function component the ref was silently
+// dropped, so the email field rendered empty and never reached the submit
+// payload, and the password form could not read its fields at all.
+const Field = forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement> & {
+    id: string;
+    label: React.ReactNode;
+    icon?: React.ReactNode;
+    trailing?: React.ReactNode;
+  }
+>(function Field({ id, label, icon, trailing, ...input }, ref) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -474,6 +497,7 @@ function Field({
         )}
         <Input
           id={id}
+          ref={ref}
           className={cn(icon && 'pl-8', trailing && 'pr-10')}
           {...input}
         />
@@ -483,7 +507,7 @@ function Field({
       </div>
     </div>
   );
-}
+});
 
 function KeyField({
   id,

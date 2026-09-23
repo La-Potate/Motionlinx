@@ -5,7 +5,10 @@ export const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+  // max-w-full + min-w-0 keep a wide table scrolling inside its column instead
+  // of widening the page: at phone width the admin users table pushed the
+  // document to ~800px.
+  <div className="relative w-full max-w-full min-w-0 overflow-auto">
     <table
       ref={ref}
       className={cn('w-full caption-bottom text-sm', className)}
