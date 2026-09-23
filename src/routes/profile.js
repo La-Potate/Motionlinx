@@ -111,22 +111,30 @@ passwordRouter.post('/', authenticate, async (req, res) => {
   if (!oldPassword || !newPassword) {
     return res.status(400).json({ error: 'Old password and new password are required' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+  // Same floor as signup — an account could previously be edited into a
+  // weaker password than it was allowed to be created with.
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters long' });
   }
 
   try {
     const user = await dbGet('SELECT password_hash FROM users WHERE id = ?', [userId]);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (!bcrypt.compareSync(oldPassword, user.password_hash)) {
+    if (!(await bcrypt.compare(String(oldPassword), user.password_hash))) {
       return res.status(400).json({ error: 'Current password is incorrect' });
     }
-    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
     await dbRun(
       'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [hashedPassword, userId],
     );
-    res.json({ message: 'Password changed successfully' });
+    // Someone changing their password because they suspect compromise expects
+    // the attacker to be logged out. Refresh tokens live 14 days, so without
+    // this the attacker's session kept renewing itself. The caller's own
+    // access token stays valid until it expires (1h) and the client will
+    // re-authenticate on the next refresh.
+    await dbRun('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
+    res.json({ message: 'Password changed successfully. Other sessions have been signed out.' });
   } catch (err) {
     logger.error({ err }, 'Failed to change password');
     res.status(500).json({ error: 'Failed to change password' });

@@ -14,11 +14,13 @@ const CLAUDE_MODEL_SEQUENCE = [
 const CLAUDE_MAX_OUTPUT_TOKENS = 16000;
 const CLAUDE_THINKING_BUDGET_TOKENS = 10000;
 
-// Native fetch on Node 20+; this wrapper is kept for back-compat with callers
-// that still `await ensureFetch()` rather than calling the global directly.
-async function ensureFetch() {
-  return globalThis.fetch.bind(globalThis);
-}
+// A 16k-token non-streaming generation can legitimately run for minutes, so
+// this is far above the shared default — but it is still a bound. Before, a
+// stalled connection to the API held the request open indefinitely.
+const CLAUDE_REQUEST_TIMEOUT_MS = 180000;
+
+// Kept exported for back-compat; resolves to the shared timed, SSRF-guarded fetch.
+const { ensureFetch } = require('../utils/smartFetch');
 
 function parseClaudeErrorMessage(text = '') {
   if (!text) return '';
@@ -77,6 +79,7 @@ async function requestClaudeMessages(baseBody, apiKey) {
         'x-api-key': apiKey,
       },
       body: JSON.stringify(requestBody),
+      timeout: CLAUDE_REQUEST_TIMEOUT_MS,
     });
 
     if (response.ok) return response.json();

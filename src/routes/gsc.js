@@ -10,6 +10,12 @@ const { encryptSecret, decryptSecret } = require('../utils/crypto');
 const { getSystemApiKey } = require('../storage/systemSettings');
 const { JWT_SECRET } = require('../config/env');
 const gsc = require('../services/gsc');
+const {
+  readCookie,
+  setStateCookie,
+  clearStateCookie,
+  nonceMatches,
+} = require('../services/googleOauth');
 
 const router = express.Router();
 
@@ -17,13 +23,15 @@ const router = express.Router();
 // callback to a user without trusting query params.
 const STATE_TTL_SECONDS = 10 * 60;
 const STATE_AUDIENCE = 'gsc-oauth';
+// Binds the state to the browser that started the flow — see services/googleOauth.js.
+const STATE_COOKIE = 'gsc_oauth_nonce';
+const STATE_COOKIE_PATH = '/api/gsc';
 
-function signState(userId) {
-  return jwt.sign(
-    { uid: userId, nonce: crypto.randomBytes(8).toString('hex') },
-    JWT_SECRET || 'dev-secret',
-    { audience: STATE_AUDIENCE, expiresIn: STATE_TTL_SECONDS },
-  );
+function signState(userId, nonce) {
+  return jwt.sign({ uid: userId, nonce }, JWT_SECRET || 'dev-secret', {
+    audience: STATE_AUDIENCE,
+    expiresIn: STATE_TTL_SECONDS,
+  });
 }
 
 function verifyState(state) {
@@ -151,6 +159,11 @@ router.get('/auth/callback', async (req, res) => {
   if (!code || !state) return res.redirect(clientReturnUrl(req, { gsc_error: 'missing_params' }));
   const payload = verifyState(String(state));
   if (!payload || !payload.uid) return res.redirect(clientReturnUrl(req, { gsc_error: 'invalid_state' }));
+  if (!nonceMatches(readCookie(req, STATE_COOKIE), payload.nonce)) {
+    logger.warn({ uid: payload.uid }, 'GSC OAuth callback without a matching state cookie');
+    return res.redirect(clientReturnUrl(req, { gsc_error: 'invalid_state' }));
+  }
+  clearStateCookie(req, res, STATE_COOKIE, STATE_COOKIE_PATH);
   const { clientId, clientSecret } = readOauthClientConfig();
   if (!clientId || !clientSecret) return res.redirect(clientReturnUrl(req, { gsc_error: 'oauth_not_configured' }));
   try {
@@ -184,7 +197,9 @@ router.post('/auth/start', async (req, res) => {
       .status(412)
       .json({ error: 'oauth_not_configured', message: 'Admin must configure the Google OAuth client first.' });
   }
-  const state = signState(req.user.id);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const state = signState(req.user.id, nonce);
+  setStateCookie(req, res, STATE_COOKIE, nonce, STATE_COOKIE_PATH);
   const url = gsc.buildAuthorizeUrl({
     clientId,
     redirectUri: resolveRedirectUri(req),

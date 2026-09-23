@@ -1,6 +1,12 @@
 'use strict';
 
+const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { timedFetch } = require('../utils/smartFetch');
+
+// Google's token endpoints answer in well under a second; a hung connection
+// here used to stall the OAuth callback with no bound at all.
+const GOOGLE_HTTP_TIMEOUT_MS = 20000;
 
 // Shared Google OAuth 2.0 helpers, used by both /api/ga4 (Analytics) and
 // /api/gsc (Search Console). One admin-configured OAuth client powers both
@@ -34,10 +40,11 @@ async function exchangeCodeForTokens({ code, clientId, clientSecret, redirectUri
     redirect_uri: redirectUri,
     grant_type: 'authorization_code',
   });
-  const res = await fetch(GOOGLE_TOKEN_URL, {
+  const res = await timedFetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    timeout: GOOGLE_HTTP_TIMEOUT_MS,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) {
@@ -58,10 +65,11 @@ async function refreshAccessToken({ refreshToken, clientId, clientSecret }) {
     client_secret: clientSecret,
     grant_type: 'refresh_token',
   });
-  const res = await fetch(GOOGLE_TOKEN_URL, {
+  const res = await timedFetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    timeout: GOOGLE_HTTP_TIMEOUT_MS,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) {
@@ -75,8 +83,9 @@ async function refreshAccessToken({ refreshToken, clientId, clientSecret }) {
 }
 
 async function fetchUserInfo(accessToken) {
-  const res = await fetch(GOOGLE_USERINFO_URL, {
+  const res = await timedFetch(GOOGLE_USERINFO_URL, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    timeout: GOOGLE_HTTP_TIMEOUT_MS,
   });
   if (!res.ok) return null;
   return res.json().catch(() => null);
@@ -85,13 +94,78 @@ async function fetchUserInfo(accessToken) {
 async function revokeToken(token) {
   if (!token) return;
   try {
-    await fetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, { method: 'POST' });
+    await timedFetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      timeout: GOOGLE_HTTP_TIMEOUT_MS,
+    });
   } catch (err) {
     logger.warn({ err: err.message }, 'Google token revoke failed (best-effort)');
   }
 }
 
+// ---- OAuth state ↔ browser binding ----------------------------------------
+//
+// The signed `state` proves which user *started* the flow. On its own that is
+// not enough: an attacker can start a flow, take the Google URL (which carries
+// a state for the attacker's uid), and get a victim to open it. The victim
+// consents, Google sends the victim's browser to our callback with the
+// attacker's state, and the victim's Google tokens are saved under the
+// attacker's account. A nonce cookie set when the flow starts, and required to
+// match the state at the callback, binds the state to the browser that began
+// it. SameSite=Lax cookies are sent on the top-level GET Google performs, and
+// an attacker cannot plant one in the victim's browser for our origin.
+const STATE_COOKIE_MAX_AGE_MS = 10 * 60 * 1000;
+
+function readCookie(req, name) {
+  const header = req.headers && req.headers.cookie;
+  if (!header) return null;
+  for (const part of String(header).split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function isSecureRequest(req) {
+  if (req.secure) return true;
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return proto === 'https';
+}
+
+function setStateCookie(req, res, name, nonce, path) {
+  res.cookie(name, nonce, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isSecureRequest(req),
+    path,
+    maxAge: STATE_COOKIE_MAX_AGE_MS,
+  });
+}
+
+function clearStateCookie(req, res, name, path) {
+  res.clearCookie(name, { httpOnly: true, sameSite: 'lax', secure: isSecureRequest(req), path });
+}
+
+/** Constant-time equality for the nonce in the cookie vs the one in the state. */
+function nonceMatches(fromCookie, fromState) {
+  if (typeof fromCookie !== 'string' || typeof fromState !== 'string') return false;
+  const a = Buffer.from(fromCookie);
+  const b = Buffer.from(fromState);
+  if (a.length !== b.length || a.length === 0) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 module.exports = {
+  readCookie,
+  setStateCookie,
+  clearStateCookie,
+  nonceMatches,
   buildAuthorizeUrl,
   exchangeCodeForTokens,
   refreshAccessToken,

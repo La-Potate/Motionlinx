@@ -148,12 +148,18 @@ async function ensureSiteMarkerDirs(userId, pageId = null) {
   if (pageId) await fsp.mkdir(getSiteMarkerPageDir(userId, pageId), { recursive: true });
 }
 
+// Bounds on what one page may store. Without them a single PUT could write
+// the whole 10 MB JSON body limit to disk, and repeat until the volume filled.
+const MAX_MARKERS_PER_PAGE = 500;
+const MAX_MARKER_TEXT_LENGTH = 4000;
+
 function normalizeMarker(marker = {}) {
   const safeId =
     typeof marker.id === 'string' && marker.id.trim().length
-      ? marker.id.trim()
+      ? marker.id.trim().slice(0, 64)
       : generateSiteMarkerId();
-  const safeText = typeof marker.text === 'string' ? marker.text.trim() : '';
+  const safeText =
+    typeof marker.text === 'string' ? marker.text.trim().slice(0, MAX_MARKER_TEXT_LENGTH) : '';
   const safeX = Math.min(Math.max(Number(marker.x) || 0, 0), 1);
   const safeY = Math.min(Math.max(Number(marker.y) || 0, 0), 1);
   const now = new Date().toISOString();
@@ -314,6 +320,8 @@ async function findSiteMarkerByShareToken(shareToken) {
 
 module.exports = {
   SITE_MARKER_ROOT,
+  MAX_MARKERS_PER_PAGE,
+  MAX_MARKER_TEXT_LENGTH,
   generateSiteMarkerId,
   generateShareToken,
   normalizeMarker,

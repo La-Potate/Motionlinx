@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { db } = require('../utils/dbAsync');
 const { readSystemSettings, writeSystemSettings } = require('../storage/systemSettings');
 const { encryptSecret, decryptSecret } = require('../utils/crypto');
+const { CLAUDE_API_KEY } = require('../config/env');
 
 /**
  * On startup, restore service API keys (Claude, Serper) from the most recent
@@ -15,7 +16,7 @@ function syncApiKeysFromDatabase() {
   const currentApiKeys =
     settings.apiKeys && typeof settings.apiKeys === 'object' ? settings.apiKeys : {};
 
-  if (!currentApiKeys.claude && !process.env.CLAUDE_API_KEY) {
+  if (!currentApiKeys.claude && !CLAUDE_API_KEY) {
     db.get(
       `SELECT us.setting_value FROM user_settings us
        JOIN users u ON us.user_id = u.id

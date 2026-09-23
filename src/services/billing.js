@@ -54,8 +54,21 @@ async function handleSubscriptionSync({ subscriptionId, planId, seats = 1, statu
   if (!dbUser) return;
   const subDetails = await stripe.subscriptions.retrieve(subscriptionId, { expand: ['items'] });
   const derivedPlan = planId || subDetails?.metadata?.plan || dbUser.role;
-  const normalizedPlan = normalizeUserLevel(derivedPlan);
-  const plan = getPlanForRole(normalizedPlan);
+  let normalizedPlan = normalizeUserLevel(derivedPlan);
+  let plan = getPlanForRole(normalizedPlan);
+  // `role` is about to be written from subscription metadata. Every valid user
+  // level normalises cleanly — including `admin` — so a metadata value with no
+  // matching plan must not become a role change. Checkout never issues such a
+  // value; this closes the path through a Stripe Dashboard edit or a
+  // compromised Stripe account.
+  if (!plan) {
+    logger.warn(
+      { subscriptionId, derivedPlan, userId: dbUser.id },
+      'Subscription metadata names a plan with no configuration; keeping the current role',
+    );
+    normalizedPlan = normalizeUserLevel(dbUser.role);
+    plan = getPlanForRole(normalizedPlan);
+  }
   const periodEnd = subDetails?.current_period_end
     ? new Date(subDetails.current_period_end * 1000).toISOString()
     : null;

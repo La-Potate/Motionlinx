@@ -5,7 +5,7 @@ const logger = require('../../utils/logger');
 
 const PLAYWRIGHT_RENDER_TIMEOUT_MS = 30000;
 const PLAYWRIGHT_NAV_TIMEOUT_MS = 20000;
-const POOL_MAX = parseInt(process.env.PLAYWRIGHT_POOL_MAX || '3', 10);
+const { PLAYWRIGHT_POOL_MAX: POOL_MAX } = require('../../config/env');
 const POOL_MIN = 0;
 const POOL_IDLE_TIMEOUT_MS = 60000;
 

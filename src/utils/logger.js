@@ -1,10 +1,10 @@
 'use strict';
 
 const pino = require('pino');
-const { isProd, isTest } = require('../config/env');
+const { isProd, isTest, LOG_LEVEL } = require('../config/env');
 
 const logger = pino({
-  level: process.env.LOG_LEVEL || (isProd ? 'info' : 'debug'),
+  level: LOG_LEVEL || (isProd ? 'info' : 'debug'),
   ...(isTest ? { enabled: false } : {}),
   ...(isProd
     ? {}

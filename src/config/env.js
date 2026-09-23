@@ -75,7 +75,17 @@ const envSchema = z.object({
   // User agents
   SCHEMA_AUTOFILL_USER_AGENT: z.string().optional(),
   BUSINESS_AUDIT_USER_AGENT: z.string().optional(),
+
+  // Operational knobs. Declared here so every environment variable the app
+  // reads is validated and documented in one place rather than scattered
+  // through `process.env` reads.
+  //   LOG_LEVEL            pino level; defaults to info in production, debug otherwise
+  //   PLAYWRIGHT_POOL_MAX  concurrent headless browsers for page capture
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
+  PLAYWRIGHT_POOL_MAX: z.coerce.number().int().min(1).max(16).default(3),
 });
+
+const JWT_SECRET_MIN_LENGTH = 32;
 
 const parsed = envSchema.safeParse(process.env);
 // NOTE: this file deliberately uses console.error rather than the pino logger.
@@ -96,6 +106,17 @@ const env = parsed.data;
 if (env.NODE_ENV === 'production') {
   const fatal = [];
   if (!env.JWT_SECRET) fatal.push('JWT_SECRET is required in production');
+  // Presence alone is not enough: HS256 tokens signed with a short secret can
+  // be brute-forced offline, and a forged token is a session for any user,
+  // admin included. 32 characters is the floor .env.example already asks for.
+  else if (env.JWT_SECRET.length < JWT_SECRET_MIN_LENGTH) {
+    fatal.push(
+      `JWT_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters in production (got ${env.JWT_SECRET.length})`,
+    );
+    fatal.push(
+      'Generate one with:  openssl rand -base64 32   (or the equivalent 32 random bytes, base64)',
+    );
+  }
   if (env.STRIPE_SECRET_KEY && !env.STRIPE_WEBHOOK_SECRET) {
     fatal.push('STRIPE_WEBHOOK_SECRET is required in production when STRIPE_SECRET_KEY is set');
   }
@@ -175,4 +196,7 @@ module.exports = {
   SCHEMA_AUTOFILL_USER_AGENT,
   BUSINESS_AUDIT_USER_AGENT,
   ROBOTS_CHECKER_USER_AGENT,
+  LOG_LEVEL: env.LOG_LEVEL,
+  PLAYWRIGHT_POOL_MAX: env.PLAYWRIGHT_POOL_MAX,
+  JWT_SECRET_MIN_LENGTH,
 };

@@ -2,7 +2,7 @@
 
 const express = require('express');
 const logger = require('../utils/logger');
-const { dbGet } = require('../utils/dbAsync');
+const { dbGet, dbRun } = require('../utils/dbAsync');
 const { normalizeUserLevel, DEFAULT_USER_LEVEL } = require('../utils/userLevel');
 const { stripe, isStripeEnabled } = require('../integrations/stripe');
 const authenticate = require('../middleware/authenticate');
@@ -97,7 +97,40 @@ router.post('/webhook', stripeIpAllowlist, async (req, res) => {
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    switch (event.type) {
+    // Stripe retries on any non-2xx and may deliver an event more than once
+    // regardless. The top-up path is additive, so without this every
+    // redelivery of one checkout.session.completed granted another 1000
+    // credits. Claim the event id first; a second delivery finds the row and
+    // is acknowledged without being processed again.
+    const claim = await dbRun(
+      'INSERT OR IGNORE INTO stripe_webhook_events (event_id, type) VALUES (?, ?)',
+      [event.id, event.type],
+    );
+    if (!claim.changes) {
+      logger.info({ eventId: event.id, type: event.type }, 'Stripe event already processed');
+      return res.json({ received: true, duplicate: true });
+    }
+
+    try {
+      await dispatchStripeEvent(event);
+    } catch (err) {
+      // Release the claim so Stripe's retry can reprocess it — a failure here
+      // must not permanently swallow the event.
+      await dbRun('DELETE FROM stripe_webhook_events WHERE event_id = ?', [event.id]).catch(
+        () => undefined,
+      );
+      throw err;
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    logger.error({ err }, 'Stripe webhook handler error');
+    res.status(err.status || 500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+async function dispatchStripeEvent(event) {
+  switch (event.type) {
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object);
         break;
@@ -122,13 +155,7 @@ router.post('/webhook', stripeIpAllowlist, async (req, res) => {
         break;
       default:
         break;
-    }
-
-    res.json({ received: true });
-  } catch (err) {
-    logger.error({ err }, 'Stripe webhook handler error');
-    res.status(err.status || 500).json({ error: 'Webhook processing failed' });
   }
-});
+}
 
 module.exports = router;

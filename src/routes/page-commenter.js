@@ -13,6 +13,7 @@ const {
   listPageCommentPages,
   loadPageCommentPage,
   removePageCommentPage,
+  MAX_COMMENTS_PER_PAGE,
 } = require('../storage/pageCommenter');
 const {
   parseTitleFromHtml,
@@ -89,6 +90,11 @@ router.put('/pages/:id/comments', async (req, res) => {
     const { comments } = req.body || {};
     if (!Array.isArray(comments)) {
       return res.status(400).json({ error: 'Comments payload must be an array.' });
+    }
+    if (comments.length > MAX_COMMENTS_PER_PAGE) {
+      return res
+        .status(400)
+        .json({ error: `A page can hold at most ${MAX_COMMENTS_PER_PAGE} comments.` });
     }
     const record = await loadPageCommentPage(req.user.id, req.params.id);
     if (!record) return res.status(404).json({ error: 'Page not found.' });

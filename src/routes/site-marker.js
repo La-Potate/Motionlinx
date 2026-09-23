@@ -17,6 +17,7 @@ const {
   removeSiteMarkerPage,
   findSiteMarkerByShareToken,
   setShareToken,
+  MAX_MARKERS_PER_PAGE,
 } = require('../storage/siteMarker');
 const {
   parseTitleFromHtml,
@@ -143,6 +144,11 @@ router.put('/pages/:id/markers', async (req, res) => {
     const { markers } = req.body || {};
     if (!Array.isArray(markers)) {
       return res.status(400).json({ error: 'Markers payload must be an array.' });
+    }
+    if (markers.length > MAX_MARKERS_PER_PAGE) {
+      return res
+        .status(400)
+        .json({ error: `A page can hold at most ${MAX_MARKERS_PER_PAGE} markers.` });
     }
     const record = await loadSiteMarkerPage(req.user.id, req.params.id);
     if (!record) return res.status(404).json({ error: 'Page not found.' });

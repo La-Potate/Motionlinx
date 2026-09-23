@@ -47,12 +47,17 @@ async function ensurePageCommentDirs(userId, pageId = null) {
   if (pageId) await fsp.mkdir(getPageCommentPageDir(userId, pageId), { recursive: true });
 }
 
+// Bounds on what one page may store — see the matching constants in siteMarker.js.
+const MAX_COMMENTS_PER_PAGE = 500;
+const MAX_COMMENT_TEXT_LENGTH = 4000;
+
 function normalizeComment(comment = {}) {
   const safeId =
     typeof comment.id === 'string' && comment.id.trim().length
-      ? comment.id.trim()
+      ? comment.id.trim().slice(0, 64)
       : generatePageCommentId();
-  const safeText = typeof comment.text === 'string' ? comment.text.trim() : '';
+  const safeText =
+    typeof comment.text === 'string' ? comment.text.trim().slice(0, MAX_COMMENT_TEXT_LENGTH) : '';
   const safeX = Math.min(Math.max(Number(comment.x) || 0, 0), 1);
   const safeY = Math.min(Math.max(Number(comment.y) || 0, 0), 1);
   const now = new Date().toISOString();
@@ -165,6 +170,8 @@ async function removePageCommentPage(userId, pageId) {
 
 module.exports = {
   PAGE_COMMENT_ROOT,
+  MAX_COMMENTS_PER_PAGE,
+  MAX_COMMENT_TEXT_LENGTH,
   generatePageCommentId,
   normalizeComment,
   readPageCommentMeta,

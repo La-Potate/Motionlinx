@@ -70,12 +70,48 @@ const NETWORK_ERROR_CODES = new Set([
 
 const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 
+// Upper bound for a provider call made through ensureFetch(). Every
+// integration (Serper, DataForSEO, Google Places and Custom Search, the Google
+// OAuth token endpoints) used the bare global fetch with no timeout at all, so
+// a hung upstream pinned the request — and its credit-guard finish hook, its
+// rate-limit slot, any Playwright browser it held — until the socket died on
+// its own. Generous because DataForSEO's live endpoints can legitimately take
+// tens of seconds; callers with a longer job pass `timeout` explicitly.
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 60000;
+
+/** Abort when either input aborts. Avoids AbortSignal.any (Node >= 20.3 only). */
+function combineSignals(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const controller = new AbortController();
+  const forward = (source) => () => controller.abort(source.reason);
+  if (a.aborted) controller.abort(a.reason);
+  else a.addEventListener('abort', forward(a), { once: true });
+  if (b.aborted) controller.abort(b.reason);
+  else b.addEventListener('abort', forward(b), { once: true });
+  return controller.signal;
+}
+
 /**
- * Kept as an async wrapper for back-compat with existing call sites that did
- * `await ensureFetch()`. Now resolves synchronously to the native global fetch.
+ * fetch with a bound on how long it may take. Accepts a `timeout` (ms) option
+ * in addition to the standard init fields; `timeout: 0` opts out. A caller's
+ * own `signal` is respected alongside the timer.
+ */
+function timedFetch(url, init = {}) {
+  const { timeout, ...rest } = init || {};
+  const ms = timeout === undefined ? DEFAULT_UPSTREAM_TIMEOUT_MS : timeout;
+  if (!(ms > 0)) return cachedFetch(url, rest);
+  const signal = combineSignals(rest.signal, AbortSignal.timeout(ms));
+  return cachedFetch(url, { ...rest, signal });
+}
+
+/**
+ * Resolves to the fetch every integration should use: native fetch, routed
+ * through the SSRF-guarded dispatcher, with a default timeout. Kept async for
+ * back-compat with call sites that `await ensureFetch()`.
  */
 async function ensureFetch() {
-  return cachedFetch;
+  return timedFetch;
 }
 
 function isTlsRetryableError(error = {}) {
@@ -154,6 +190,9 @@ async function fetchWithSmartAgent(url, options = {}) {
 
 module.exports = {
   ensureFetch,
+  timedFetch,
+  combineSignals,
+  DEFAULT_UPSTREAM_TIMEOUT_MS,
   guardedDispatcher,
   fetchWithSmartAgent,
   isTlsRetryableError,

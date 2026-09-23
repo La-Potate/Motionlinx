@@ -10,6 +10,12 @@ const { encryptSecret, decryptSecret } = require('../utils/crypto');
 const { getSystemApiKey } = require('../storage/systemSettings');
 const { JWT_SECRET } = require('../config/env');
 const ga4 = require('../services/ga4');
+const {
+  readCookie,
+  setStateCookie,
+  clearStateCookie,
+  nonceMatches,
+} = require('../services/googleOauth');
 
 const router = express.Router();
 
@@ -19,12 +25,13 @@ const router = express.Router();
 // trusting query params) and a nonce to make replay obvious.
 const STATE_TTL_SECONDS = 10 * 60;
 const STATE_AUDIENCE = 'ga4-oauth';
+// Cookie that binds the state to the browser that started the flow — see the
+// note in services/googleOauth.js. Scoped to this router's path.
+const STATE_COOKIE = 'ga4_oauth_nonce';
+const STATE_COOKIE_PATH = '/api/ga4';
 
-function signState(userId) {
-  const payload = {
-    uid: userId,
-    nonce: crypto.randomBytes(8).toString('hex'),
-  };
+function signState(userId, nonce) {
+  const payload = { uid: userId, nonce };
   return jwt.sign(payload, JWT_SECRET || 'dev-secret', {
     audience: STATE_AUDIENCE,
     expiresIn: STATE_TTL_SECONDS,
@@ -186,6 +193,13 @@ router.get('/auth/callback', async (req, res) => {
   if (!payload || !payload.uid) {
     return res.redirect(clientReturnUrl(req, { ga4_error: 'invalid_state' }));
   }
+  // The state alone only proves who started the flow. Require the nonce cookie
+  // set at /auth/start so tokens can only be bound by the browser that began it.
+  if (!nonceMatches(readCookie(req, STATE_COOKIE), payload.nonce)) {
+    logger.warn({ uid: payload.uid }, 'GA4 OAuth callback without a matching state cookie');
+    return res.redirect(clientReturnUrl(req, { ga4_error: 'invalid_state' }));
+  }
+  clearStateCookie(req, res, STATE_COOKIE, STATE_COOKIE_PATH);
   const { clientId, clientSecret } = readOauthClientConfig();
   if (!clientId || !clientSecret) {
     return res.redirect(clientReturnUrl(req, { ga4_error: 'oauth_not_configured' }));
@@ -229,7 +243,9 @@ router.post('/auth/start', async (req, res) => {
       .status(412)
       .json({ error: 'oauth_not_configured', message: 'Admin must configure the Google OAuth client first.' });
   }
-  const state = signState(req.user.id);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const state = signState(req.user.id, nonce);
+  setStateCookie(req, res, STATE_COOKIE, nonce, STATE_COOKIE_PATH);
   const url = ga4.buildAuthorizeUrl({
     clientId,
     redirectUri: resolveRedirectUri(req),

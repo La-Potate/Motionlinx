@@ -29,6 +29,8 @@ const { CREDIT_EXEMPT_PREFIXES } = require('./middleware/creditGuard');
 // Bring up the SQLite handle (also runs WAL/synchronous pragmas).
 const db = require('./db/connection');
 const { syncApiKeysFromDatabase } = require('./services/apiKeySync');
+const { drainAllPools } = require('./integrations/playwright/pool');
+const { scheduleRetentionSweep, stopRetentionSweep } = require('./services/maintenance');
 
 function migrateLegacyDatabase() {
   const legacyDbPath = path.join(__dirname, '..', 'data', 'database.sqlite');
@@ -267,12 +269,70 @@ async function buildApp() {
   return app;
 }
 
-function attachShutdownHandlers() {
-  const shutdown = (signal) => {
+// How long a shutdown may wait for in-flight requests before giving up. Docker
+// sends SIGKILL 10s after SIGTERM by default, so this must finish inside that.
+const SHUTDOWN_DEADLINE_MS = 9000;
+
+/**
+ * Stop cleanly on SIGTERM / SIGINT.
+ *
+ * The previous handler was `db.close(); process.exit(0)`: it never stopped
+ * accepting connections, killed in-flight requests (a page capture can run
+ * for 30s and is mid-write), never drained the Playwright pool — leaving
+ * Chromium processes behind — and `process.exit` raced the asynchronous
+ * `db.close`, cutting the WAL checkpoint short. Every `compose up --build`
+ * on the NAS exercised this path.
+ *
+ * Order matters: stop taking new work, let what is running finish, release
+ * browsers, then close the database and wait for it. A hard deadline keeps a
+ * stuck request from turning a restart into a hang.
+ */
+function attachShutdownHandlers(server) {
+  let shuttingDown = false;
+
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`${signal} received, shutting down gracefully`);
-    db.close();
-    process.exit(0);
+
+    const deadline = setTimeout(() => {
+      logger.warn(
+        { ms: SHUTDOWN_DEADLINE_MS },
+        'Shutdown deadline reached; exiting with in-flight work unfinished',
+      );
+      process.exit(1);
+    }, SHUTDOWN_DEADLINE_MS);
+    deadline.unref();
+
+    try {
+      stopRetentionSweep();
+      await new Promise((resolve) => {
+        // close() stops accepting and resolves once every connection has
+        // ended. Idle keep-alive sockets would otherwise hold that open until
+        // their timeout, so shut those immediately; active ones finish.
+        server.close(() => resolve());
+        if (typeof server.closeIdleConnections === 'function') server.closeIdleConnections();
+      });
+      logger.info('HTTP server closed; in-flight requests finished');
+
+      await drainAllPools();
+
+      await new Promise((resolve) => {
+        db.close((err) => {
+          if (err) logger.warn({ err }, 'Database close reported an error');
+          resolve();
+        });
+      });
+      logger.info('Database closed');
+
+      clearTimeout(deadline);
+      process.exit(0);
+    } catch (err) {
+      logger.error({ err }, 'Error during shutdown');
+      process.exit(1);
+    }
   };
+
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
@@ -328,7 +388,8 @@ async function start() {
     process.exit(1);
   });
 
-  attachShutdownHandlers();
+  attachShutdownHandlers(server);
+  scheduleRetentionSweep();
   return app;
 }
 
