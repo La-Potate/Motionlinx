@@ -13,10 +13,15 @@
 #
 # Debian slim has glibc, so both native modules install from prebuilt binaries
 # and Playwright is on a supported platform.
+#
+# Debian 13 (trixie), not 12: the sqlite3 6.x prebuild is linked against
+# glibc 2.38 and bookworm ships 2.36 - on node:*-slim (bookworm) the module
+# installs fine and then fails to load with "GLIBC_2.38 not found". Node 24 is
+# the active LTS; Node 20 reached end of life in April 2026.
 # ---------------------------------------------------------------------------
 
 # ---------- stage 1: build the SPA ----------
-FROM node:20-slim AS client
+FROM node:24-trixie-slim AS client
 
 WORKDIR /build
 
@@ -39,7 +44,7 @@ RUN npm run build
 
 
 # ---------- stage 2: runtime ----------
-FROM node:20-slim AS runtime
+FROM node:24-trixie-slim AS runtime
 
 # Browsers live outside the home directory so they survive the switch to the
 # non-root user and are readable by it.
@@ -49,11 +54,15 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-# sqlite3 and bcrypt resolve prebuilt glibc binaries here, so no compiler
+# sqlite3 (prebuild-install, downloaded at install time) and bcrypt (prebuilds
+# shipped inside the package) resolve glibc binaries here, so no compiler
 # toolchain is needed. If you build for an architecture they do not publish
 # prebuilds for, npm falls back to node-gyp and this step will fail asking for
 # python3/make/g++ — add build-essential and python3 in that case.
-RUN npm ci --omit=dev --no-audit --no-fund
+# The require line makes a silently skipped or wrong-ABI binary fail the build
+# here rather than the first request in production.
+RUN npm ci --omit=dev --no-audit --no-fund \
+    && node -e "require('sqlite3'); require('bcrypt')"
 
 # Chromium plus its OS libraries. Must run as root, before the USER switch.
 #

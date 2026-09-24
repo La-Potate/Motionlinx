@@ -154,8 +154,18 @@ router.post('/:id/start', tieredRateLimit('heavy'), async (req, res) => {
       [req.params.id],
     );
 
-    // Fire-and-forget background runner. Client polls /:id for progress.
-    runCitationAudit(req.params.id, audit);
+    // Background runner; the client polls /:id for progress. Only the queue
+    // insert is awaited. If that fails the row was already flipped to
+    // 'running' above, so put it back or the audit would look stuck forever.
+    try {
+      await runCitationAudit(req.params.id, audit);
+    } catch (err) {
+      await dbRun(
+        'UPDATE citation_audits SET status = ?, started_at = NULL WHERE id = ?',
+        [audit.status, req.params.id],
+      );
+      throw err;
+    }
 
     res.json({ success: true, message: 'Audit started.' });
   } catch (err) {

@@ -72,6 +72,9 @@ const envSchema = z.object({
 
   // Claude
   CLAUDE_API_KEY: z.string().optional().default(''),
+  // Preferred model for content generation; see integrations/claude.js for the
+  // fallback chain. Empty means the built-in default.
+  CLAUDE_MODEL: z.string().trim().optional().default(''),
 
   // Encryption-at-rest for user-saved API keys. 32 raw bytes encoded as base64
   // (44 chars). If unset, the app operates in plaintext mode with a warning.
@@ -199,6 +202,7 @@ module.exports = {
   STRIPE_CANCEL_URL: env.STRIPE_CANCEL_URL,
   STRIPE_WEBHOOK_IPS: env.STRIPE_WEBHOOK_IPS,
   CLAUDE_API_KEY: env.CLAUDE_API_KEY,
+  CLAUDE_MODEL: env.CLAUDE_MODEL,
   MASTER_KEY: env.MASTER_KEY,
   SCHEMA_AUTOFILL_USER_AGENT,
   BUSINESS_AUDIT_USER_AGENT,

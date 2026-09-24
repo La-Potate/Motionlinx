@@ -6,7 +6,7 @@ _Refreshed 2026-05-27 after the comprehensive reliability + security pass. Super
 
 ## 1. What this is
 
-**SEO Toolkit** is a self-hosted, full-stack web app — Node 20 / Express backend, React 18 / Vite frontend, SQLite — that packages a working SEO consultant's daily toolkit into one product. Currently at `v0.6.0`. Deployable via `npm start` (which runs `node src/index.js`) or `docker compose up`.
+**SEO Toolkit** is a self-hosted, full-stack web app — Node 24 / Express backend, React 18 / Vite frontend, SQLite — that packages a working SEO consultant's daily toolkit into one product. Currently at `v0.6.0`. Deployable via `npm start` (which runs `node src/index.js`) or `docker compose up`.
 
 ### Feature surface
 
@@ -44,7 +44,7 @@ MotionLinx Toolkit/
 ├── tests/                    ← vitest backend smoke tests (23 passing)
 ├── app-data/                 ← runtime storage (gitignored)
 ├── docker-compose.yml        ← builds locally (no registry), USERDATA_PATH volume
-├── Dockerfile                ← Node 20 (Debian slim), multi-stage, Chromium, non-root
+├── Dockerfile                ← Node 24 (Debian 13 slim), multi-stage, Chromium, non-root
 ├── .env.example              ← every env var documented
 ├── docs/
 │   ├── ENV_KEYS.md           ← how to get each API key + production checklist

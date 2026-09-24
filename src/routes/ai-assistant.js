@@ -223,7 +223,7 @@ router.post('/projects/:id/runs', async (req, res) => {
       return res.json({ jobId: existingJob.id, alreadyRunning: true });
     }
 
-    const jobId = enqueueAnalysis({ projectId, userId: req.user.id });
+    const jobId = await enqueueAnalysis({ projectId, userId: req.user.id });
     res.json({ jobId });
   } catch (err) {
     if (err.code === 'not_connected') return res.status(401).json({ error: 'not_connected' });

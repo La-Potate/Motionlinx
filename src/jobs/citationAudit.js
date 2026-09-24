@@ -142,12 +142,12 @@ jobQueue.registerHandler(JOB_TYPE, runCitationAuditHandler, { concurrency: 2 });
  * Submit a citation audit to the queue. Caller already pre-populated the
  * pending result rows in the DB; we just orchestrate the per-source checks.
  *
- * Returns the queue's jobId so callers could expose it via API; existing
- * routes ignore it and poll the DB for status, which still works.
+ * Resolves with the queue's jobId once the job row is persisted; existing
+ * routes ignore the id and poll the DB for status, which still works.
  */
-function runCitationAudit(auditId, audit) {
+async function runCitationAudit(auditId, audit) {
   const numericId = parseInt(auditId, 10);
-  const jobId = jobQueue.submit(JOB_TYPE, { auditId: numericId, audit }, { meta: { auditId: numericId } });
+  const jobId = await jobQueue.submit(JOB_TYPE, { auditId: numericId, audit }, { meta: { auditId: numericId } });
   auditJobIds.set(numericId, jobId);
   return jobId;
 }

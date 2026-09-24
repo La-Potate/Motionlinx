@@ -195,8 +195,17 @@ mounted, so there is no separate migrate step.
 
 ## Architecture note
 
-The image is `node:20-slim` (Debian, glibc) rather than Alpine: `sqlite3` and
-`bcrypt` publish no musl prebuilds, and Playwright does not support musl at all.
-On an x86-64 NAS both native modules install from prebuilt binaries with no
-compiler in the image. On an architecture without published prebuilds, `npm ci`
-will fall back to `node-gyp` and ask for `build-essential` and `python3`.
+The image is `node:24-trixie-slim` (Debian 13, glibc) rather than Alpine:
+`sqlite3` and `bcrypt` publish no musl prebuilds, and Playwright does not
+support musl at all. On an x86-64 NAS both native modules install from prebuilt
+binaries with no compiler in the image: `bcrypt` 6 ships its prebuilds inside
+the package, `sqlite3` 6 downloads one at install time. On an architecture
+without published prebuilds, `npm ci` will fall back to `node-gyp` and ask for
+`build-essential` and `python3`.
+
+Debian 13 specifically, not 12: the `sqlite3` 6 prebuild is linked against
+glibc 2.38 and Debian 12 ships 2.36, so on `node:*-slim` it installs without
+complaint and then fails to load. The runtime stage `require`s both native
+modules straight after `npm ci`, so a wrong-ABI binary fails the build rather
+than the first request. Node 20 reached end of life in April 2026; Node 24 is
+the active LTS and what CI tests on.

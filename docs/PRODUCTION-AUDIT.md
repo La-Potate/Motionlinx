@@ -145,7 +145,8 @@ Kind values: **Confirmed** (reproduced or unambiguous in code) ·
 **Impact:** `qs`/`body-parser`: request-triggered DoS — real. `tar`/`node-gyp`: not in the runtime require graph (verified earlier), so not reachable from a request. `uuid` v3/v5/v6 with attacker buffer: unreachable.
 **Fix:** `npm audit fix` (non-breaking) on both packages. `sqlite3@6` and `googleapis@181` are semver-major: attempt `sqlite3@6` only if the Docker build can prove the native prebuild resolves; defer `googleapis` (no test coverage of GA4/GSC without live credentials).
 **Verification:** Re-audit; full test suite; client build; Docker build.
-**Status: partially fixed** — non-breaking `npm audit fix` applied: server 15 → 12 (`express`, `body-parser`, `qs` patched — the request-triggered DoS is gone), client 5 → 2 (`axios`, `form-data` patched). Remaining: server `sqlite3→6` chain (install-time only, not in the runtime require graph) and `googleapis→181` (`uuid` path unreachable); client `react-router` v7. All semver-major; deferred with rationale.
+**Status: fixed** — in two passes. First, non-breaking `npm audit fix`: server 15 → 12 (`express`, `body-parser`, `qs` patched — the request-triggered DoS is gone), client 5 → 2 (`axios`, `form-data`). Then the semver-majors (2026-09-24): `sqlite3` 5 → 6.0.1, `googleapis` 144 → 175 and `google-auth-library` 9 → 10 (the last two on Node-20-compatible releases; 180+ needs Node 22), `bcrypt` 5 → 6 (prebuilds ship inside the package, so no install-time download), `vitest` 2 → 4.1.11, client `react-router-dom` 6 → 7.18.4. **Both `npm audit` reports are now empty.** The router upgrade was checked against the v7 behaviour changes: the app has one top-level `*` route and no relative links or `navigate('..')`, so none apply; 12/12 browser flows and the full route sweep pass on the new build.
+The Docker build caught what the local install could not: the `sqlite3@6` Linux prebuild is linked against glibc 2.38 and `node:20-slim` (Debian 12) ships 2.36, so it installed cleanly and then failed to load. The image is now `node:24-trixie-slim` (Debian 13, glibc 2.41; Node 20 reached end of life in April 2026), CI runs on Node 24, and the runtime stage `require`s both native modules right after `npm ci` so this class of failure stops the build instead of the first request. Verified with a real build and a container run: readiness 200, admin login (bcrypt + SQLite) succeeds, nonce-stamped shell served.
 
 ---
 
@@ -159,11 +160,15 @@ Kind values: **Confirmed** (reproduced or unambiguous in code) ·
 No CI configuration exists. **Fix:** GitHub Actions running lint, tests, `tsc`, client build on push/PR.
 **Status: fixed** — `.github/workflows/ci.yml` (server lint+test, client tsc+build+no-sourcemap assertion, Linux Docker image build). Not yet exercised: nothing has been pushed this session.
 
-### A-17 · LOW · Improvement · Potential
-`src/integrations/claude.js` hard-codes 2024/2025 model IDs with a 403/404 fallback chain that would mask a retired model. Flagged, not changed — model choice alters output and cost, which is the owner's call.
+### A-17 · LOW · Improvement · Confirmed
+`src/integrations/claude.js` hard-coded a 2025 primary model whose two fallbacks were Claude 3.5 Sonnet builds Anthropic retired in 2025 — so once the primary went, the chain produced a second and third 404 and the user saw a generic failure.
+**Fix:** the primary model is `CLAUDE_MODEL` (env, documented in `.env.example`) with a current default (`claude-sonnet-4-5`), one live fallback, and no retired entries; extended thinking is only requested for model families known to accept the budgeted form, so an operator-supplied model outside that set cannot trigger a 400 the fallback chain would not catch; a 403/404 on a model now logs a warning naming the model and pointing at `CLAUDE_MODEL`. Model choice remains the owner's: the default is the one the previous list was reaching for.
+**Status: fixed** — `tests/claudeModels.test.mjs` (no retired ids, deduplicated sequence, 503 without a key). Not exercised against the live API (no key in CI).
 
-### A-20 · LOW · Reliability · Potential
-`jobQueue.submit()` returns a job id before the row is persisted; a failed insert leaves a dangling id in the caller's map. Flagged.
+### A-20 · LOW · Reliability · Confirmed
+`jobQueue.submit()` returned a job id synchronously and persisted the row in the background; both callers store that id in a per-project / per-audit map, so a failed insert left them holding an id that `getJob` would never find and `cancel` could never act on. The citation-audit route had also already flipped the audit to `running`, so it would have looked stuck forever.
+**Fix:** `submit` is async and resolves only once the row exists; a failed insert rejects. Both callers and routes await it, and the citation-audit route restores the previous status if submission fails.
+**Status: fixed** — `tests/jobQueue.test.mjs` (row exists when the id is returned; duplicate id rejects and leaves a single row; unregistered type still refused).
 
 ### Accepted
 - **A-18** Login returns 400 "sign in with Google" / 423 locked — reveals account existence and provider. Accepted for a small self-hosted tool.
@@ -246,6 +251,7 @@ Expected outcomes (wrong password, 429, stale session on restore, declined refre
 **Status: verified** — one 25×41 marker and one shadow render from `data:image/png`, no requests to `/web-search/marker-*.png`, console clean.
 
 ## Dismissed after checking
+- Sweep entries `GET /favicon.svg net::ERR_ABORTED` and `POST /api/web-search/bulk-http net::ERR_ABORTED` — both are requests the driver's own next navigation cancelled mid-flight (the bulk-http one was started by the interaction pass on the Bulk HTTP page and attributed to the page it landed on next). The browser aborts in-flight requests on navigation by design; nothing in the app fires either request without user intent.
 - Stripe raw body for signature verification — captured correctly, scoped to the webhook path.
 - Captured-page iframe (`PageAnnotator`) — `sandbox="allow-same-origin"` without `allow-scripts`; scripts cannot run.
 - Heatmap HTML generation — `escapeHtml` applied to name/keyword; cell values numeric.
@@ -335,10 +341,11 @@ No new runtime dependencies.
 
 ## Testing
 
-Before: 154 tests. After: **177** across 12 files. Added: OAuth state binding
+Before: 154 tests. After: **186** across 15 files (on vitest 4). Added: OAuth state binding
 (both apps), webhook idempotency and tampering, fetch time bound, payload
 caps, refresh revocation on password change, retention sweep, index presence,
-ban uniqueness, heatmap route contract, production env floor. CI runs the
+ban uniqueness, heatmap route contract, production env floor, trial route
+allowlist, job-queue persistence ordering, Claude model list. CI runs the
 suite, `tsc`, the client build (asserting zero source maps) and a Linux
 image build on every push.
 
@@ -353,23 +360,21 @@ Everything in the register that blocks deployment is fixed and verified.
 Remaining, in priority order:
 
 1. **Push and watch CI run once** (A-16) — the workflow exists but has never
-   executed; it is unverified until it does.
+   executed; it is unverified until it does. It now runs on Node 24.
 2. **Rotate `JWT_SECRET` if the existing one is under 32 characters** — the
    server now refuses to start otherwise and says so (A-11).
-3. **Dependency majors** (A-14): `sqlite3@6` (install-time `tar` chain; try in
-   CI where the Docker job proves the native prebuild), `googleapis@181`
-   (needs live GA4/GSC credentials to verify), `react-router@7`.
-4. **Model IDs** (A-17): owner's decision; the 403/404 fallback would mask a
-   retired model, so confirm the sequence against Anthropic's current list.
-5. Low: `jobQueue.submit` persistence ordering (A-20).
+3. **Confirm the Claude model** (A-17): the default is `claude-sonnet-4-5`;
+   set `CLAUDE_MODEL` if a different model or price point is wanted. The GA4 /
+   Search Console paths run on `googleapis@175` and were exercised only by the
+   OAuth-state tests, not against live Google credentials.
 
 ## Final status
 
 **Fixed and verified:** A-01, A-02, A-05, A-06, A-07, A-08, A-09, A-11, A-12,
-A-13, A-15, A-21, A-22 — each by a test, a live probe, or a real container run.
-**Fixed, verified by build/type-check only:** A-03, A-04, A-10.
-**Partially fixed / deferred with rationale:** A-14. **Flagged, unchanged:**
-A-17, A-20. **Accepted:** A-18, A-19.
+A-13, A-14, A-15, A-20, A-21, A-22 — each by a test, a live probe, or a real
+container run. **Fixed, verified by build/type-check only:** A-03, A-04, A-10.
+**Fixed, verified by unit test only (needs a live key to go further):** A-17.
+**Accepted:** A-18, A-19. Nothing in the register remains open.
 
 **Verified this pass:** 177/177 tests; ESLint 0 errors; `tsc` clean; client
 build with 0 source maps; migration 010 against a fresh DB and a copy of the

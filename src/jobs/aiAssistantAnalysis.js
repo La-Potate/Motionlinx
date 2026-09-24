@@ -31,9 +31,9 @@ async function handler({ projectId, userId }, { signal, reportProgress }) {
 
 jobQueue.registerHandler(JOB_TYPE, handler, { concurrency: 1 });
 
-function enqueueAnalysis({ projectId, userId }) {
+async function enqueueAnalysis({ projectId, userId }) {
   const numericProject = parseInt(projectId, 10);
-  const jobId = jobQueue.submit(
+  const jobId = await jobQueue.submit(
     JOB_TYPE,
     { projectId: numericProject, userId },
     { meta: { projectId: numericProject, userId } },

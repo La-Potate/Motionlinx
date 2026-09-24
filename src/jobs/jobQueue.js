@@ -149,17 +149,24 @@ async function hydratePendingForType(type) {
   if (rows.length) setImmediate(() => drain(type));
 }
 
-function submit(type, payload = {}, { jobId = generateJobId(), meta = null } = {}) {
+/**
+ * Persist the job, then enqueue it. Resolves with the job id only once the
+ * row exists, so a caller that records the id (per-project / per-audit maps)
+ * never holds an id for a job that was never written. A failed insert
+ * rejects, and the caller's request fails with it instead of returning a job
+ * id that `getJob` will never find.
+ */
+async function submit(type, payload = {}, { jobId = generateJobId(), meta = null } = {}) {
   const spec = handlers.get(type);
   if (!spec) throw new Error(`No handler registered for job type "${type}"`);
-  // Fire the DB insert + enqueue. The caller doesn't need to wait — the
-  // queue absorbs the latency. (Returning sync jobId matches the previous API.)
-  persistInsert({ id: jobId, type, payload, meta })
-    .then(() => {
-      waiting.get(type).push(jobId);
-      setImmediate(() => drain(type));
-    })
-    .catch((err) => logger.error({ err, jobId, type }, 'Failed to persist job submission'));
+  try {
+    await persistInsert({ id: jobId, type, payload, meta });
+  } catch (err) {
+    logger.error({ err, jobId, type }, 'Failed to persist job submission');
+    throw err;
+  }
+  waiting.get(type).push(jobId);
+  setImmediate(() => drain(type));
   return jobId;
 }
 

@@ -1,15 +1,22 @@
 'use strict';
 
 const logger = require('../utils/logger');
-const { CLAUDE_API_KEY } = require('../config/env');
+const { CLAUDE_API_KEY, CLAUDE_MODEL } = require('../config/env');
 
-// Best Claude models for content generation. First entry is preferred; later
-// entries are fallbacks on 403/404. Update as Anthropic releases new versions.
+// Models for content generation. The first entry is preferred and can be set
+// per install with CLAUDE_MODEL; the rest are fallbacks tried only on 403/404
+// (no access / retired). The previous list fell back to two Claude 3.5 Sonnet
+// builds that Anthropic retired in 2025, so once the primary went the chain
+// only produced a second and third 404.
+const CLAUDE_DEFAULT_MODEL = 'claude-sonnet-4-5';
 const CLAUDE_MODEL_SEQUENCE = [
-  'claude-sonnet-4-20250514',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-sonnet-20240620',
+  ...new Set([CLAUDE_MODEL || CLAUDE_DEFAULT_MODEL, CLAUDE_DEFAULT_MODEL, 'claude-sonnet-4-20250514']),
 ];
+
+// Extended thinking is only requested for model families known to accept the
+// budgeted form; an operator-supplied model outside that set is called plainly
+// rather than risking a 400 that the fallback chain would not catch.
+const THINKING_MODEL_PATTERN = /claude-(sonnet-4|opus-4|3-7)/;
 
 const CLAUDE_MAX_OUTPUT_TOKENS = 16000;
 const CLAUDE_THINKING_BUDGET_TOKENS = 10000;
@@ -61,7 +68,7 @@ async function requestClaudeMessages(baseBody, apiKey) {
       max_tokens: CLAUDE_MAX_OUTPUT_TOKENS,
     };
 
-    if (model.includes('claude-sonnet-4') || model.includes('claude-3-7')) {
+    if (THINKING_MODEL_PATTERN.test(model)) {
       requestBody.thinking = {
         type: 'enabled',
         budget_tokens: Math.min(
@@ -89,6 +96,10 @@ async function requestClaudeMessages(baseBody, apiKey) {
     logger.error({ status: response.status, model, errorText }, 'Claude API error');
 
     if (response.status !== 403 && response.status !== 404) break;
+    logger.warn(
+      { model, status: response.status },
+      'Claude model unavailable (retired or not enabled for this key); trying the next fallback. Set CLAUDE_MODEL to a current model.',
+    );
   }
 
   const error = new Error(
@@ -99,6 +110,7 @@ async function requestClaudeMessages(baseBody, apiKey) {
 }
 
 module.exports = {
+  CLAUDE_DEFAULT_MODEL,
   CLAUDE_MODEL_SEQUENCE,
   CLAUDE_MAX_OUTPUT_TOKENS,
   CLAUDE_THINKING_BUDGET_TOKENS,
